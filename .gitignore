@@ -1,0 +1,4 @@
+sample_fintech_repo 
+backend/.env
+backend/venv
+frontend/node_modules
