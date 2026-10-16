@@ -145,6 +145,59 @@ def mcp_pagerank_hotspots(tenant_id: str = "sample-fintech") -> dict:
 
 
 @mcp.tool()
+def mcp_find_symbol(symbol_name: str, tenant_id: str = "sample-fintech") -> dict:
+    """
+    [Track 01: Symbol Resolution]
+    Resolves a natural-language function or endpoint name to an exact graph node.
+    Use this as the FIRST step in any investigation to anchor the LLM to real
+    graph node IDs — never let the LLM invent node identifiers.
+    """
+    g = get_repo_graph(tenant_id)
+    cypher = """
+    MATCH (fn:Function)
+    WHERE fn.name = $sym
+       OR fn.qname CONTAINS $sym
+       OR toLower(fn.name) CONTAINS toLower($sym)
+    RETURN fn.name        AS name,
+           fn.qname       AS qname,
+           fn.file        AS file_path,
+           fn.lineno      AS start_line,
+           fn.loc         AS loc,
+           fn.docstring   AS docstring
+    ORDER BY
+      CASE WHEN fn.name = $sym THEN 0 ELSE 1 END,
+      fn.name
+    LIMIT 5
+    """
+    res = g.query(cypher, {"sym": symbol_name})
+
+    matches = []
+    highlighted = set()
+    for r in res.result_set:
+        matches.append({
+            "name":       r[0],
+            "qname":      r[1],
+            "file_path":  r[2],
+            "start_line": r[3],
+            "loc":        r[4],
+            "docstring":  r[5],
+        })
+        highlighted.add(r[0])
+
+    return {
+        "tool":             "mcp_find_symbol",
+        "track":            "Track 01: Symbol Resolution",
+        "query":            symbol_name,
+        "cypher_executed":  cypher.strip(),
+        "matches_found":    len(matches),
+        "matches":          matches,
+        "highlighted_nodes": list(highlighted),
+        # Convenience: best match (exact name match preferred)
+        "best_match": matches[0] if matches else None,
+    }
+
+
+@mcp.tool()
 def mcp_shortest_execution_path(
     entrypoint_fn: str,
     target_fn: str,
@@ -153,44 +206,91 @@ def mcp_shortest_execution_path(
     """
     [Track 01: Graph Algorithms as Tools]
     Finds the shortest call execution chain from an API entrypoint to the target function.
-    Uses openCypher shortestPath traversal.
+    Returns structured nodes+edges with file and line numbers per hop so the LLM can
+    cite actual graph evidence — never invent a path.
+    Uses FalkorDB openCypher shortestPath traversal.
     """
     g = get_repo_graph(tenant_id)
     cypher = """
     MATCH (src:Function {name: $src_name}), (tgt:Function {name: $tgt_name})
-    WITH shortestPath((src)-[:CALLS*1..10]->(tgt)) AS p
+    WITH src, tgt,
+         shortestPath((src)-[:CALLS*1..10]->(tgt)) AS p
     WHERE p IS NOT NULL
-    RETURN [n IN nodes(p) | n.name] AS path_names,
-           [n IN nodes(p) | n.qname] AS path_qnames,
-           length(p) AS hop_distance
+    RETURN
+      [n IN nodes(p) | {
+          name:       n.name,
+          qname:      n.qname,
+          file_path:  n.file,
+          start_line: n.lineno
+      }] AS path_nodes,
+      [r IN relationships(p) | type(r)] AS path_edges,
+      length(p) AS hop_distance
     """
     res = g.query(cypher, {"src_name": entrypoint_fn, "tgt_name": target_fn})
 
     if not res.result_set:
         return {
-            "tool": "mcp_shortest_execution_path",
-            "track": "Track 01: Graph Algorithms as Tools",
-            "found": False,
-            "hop_distance": -1,
-            "explainable_path": [],
+            "tool":             "mcp_shortest_execution_path",
+            "track":            "Track 01: Graph Algorithms as Tools",
+            "path_found":       False,
+            "hops":             -1,
+            "nodes":            [],
+            "edges":            [],
             "highlighted_nodes": [entrypoint_fn, target_fn],
-            "cypher_executed": cypher.strip(),
+            "cypher_executed":  cypher.strip(),
+            "note": "No path found within indexed call graph. Check symbol resolution or ingestion coverage.",
         }
 
-    row = res.result_set[0]
-    names = row[0]
+    row         = res.result_set[0]
+    path_nodes  = row[0]   # list of dicts from FalkorDB
+    path_edges  = row[1]   # list of relationship type strings
+    hop_distance = row[2]
+
+    # Normalise: FalkorDB may return node property dicts or Node objects
+    nodes_out = []
+    highlighted = set()
+    for n in path_nodes:
+        if isinstance(n, dict):
+            name = n.get("name") or ""
+            node_entry = {
+                "name":       name,
+                "qname":      n.get("qname") or "",
+                "file_path":  n.get("file_path") or "",
+                "start_line": n.get("start_line") or 0,
+            }
+        else:
+            # FalkorDB Node object fallback
+            name = getattr(n, "properties", {}).get("name", str(n))
+            props = getattr(n, "properties", {})
+            node_entry = {
+                "name":       props.get("name", ""),
+                "qname":      props.get("qname", ""),
+                "file_path":  props.get("file", ""),
+                "start_line": props.get("lineno", 0),
+            }
+        nodes_out.append(node_entry)
+        highlighted.add(node_entry["name"])
+
+    # Backward-compat: keep explainable_path as flat list of names
+    name_path = [n["name"] for n in nodes_out]
+
     return {
-        "tool": "mcp_shortest_execution_path",
-        "track": "Track 01: Graph Algorithms as Tools",
-        "algorithm": "openCypher shortestPath",
-        "found": True,
-        "entrypoint": entrypoint_fn,
-        "target": target_fn,
-        "hop_distance": row[2],
-        "explainable_path": names,
-        "qname_path": row[1],
-        "highlighted_nodes": names,
-        "cypher_executed": cypher.strip(),
+        "tool":              "mcp_shortest_execution_path",
+        "track":             "Track 01: Graph Algorithms as Tools",
+        "algorithm":         "FalkorDB openCypher shortestPath",
+        "path_found":        True,
+        "entrypoint":        entrypoint_fn,
+        "target":            target_fn,
+        "hops":              hop_distance,
+        # Structured output — cite this in reports; do NOT invent alternative paths
+        "nodes":             nodes_out,
+        "edges":             path_edges,
+        # Backwards-compatible fields
+        "hop_distance":      hop_distance,
+        "explainable_path":  name_path,
+        "qname_path":        [n["qname"] for n in nodes_out],
+        "highlighted_nodes": list(highlighted),
+        "cypher_executed":   cypher.strip(),
     }
 
 
@@ -392,16 +492,36 @@ def mcp_read_code_file(file_path: str, tenant_id: str = "sample-fintech") -> dic
 # ============================================================================
 
 TOOL_DISPATCH = {
-    "mcp_recall_episodic_memory": mcp_recall_episodic_memory,
-    "mcp_ast_blast_radius": mcp_ast_blast_radius,
-    "mcp_pagerank_hotspots": mcp_pagerank_hotspots,
-    "mcp_shortest_execution_path": mcp_shortest_execution_path,
+    "mcp_find_symbol":              mcp_find_symbol,
+    "mcp_recall_episodic_memory":   mcp_recall_episodic_memory,
+    "mcp_ast_blast_radius":         mcp_ast_blast_radius,
+    "mcp_pagerank_hotspots":        mcp_pagerank_hotspots,
+    "mcp_shortest_execution_path":  mcp_shortest_execution_path,
     "mcp_company_brain_provenance": mcp_company_brain_provenance,
-    "mcp_read_code_file": mcp_read_code_file,
-    "mcp_write_episodic_memory": mcp_write_episodic_memory,
+    "mcp_read_code_file":           mcp_read_code_file,
+    "mcp_write_episodic_memory":    mcp_write_episodic_memory,
 }
 
 OPENAI_MCP_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "mcp_find_symbol",
+            "description": (
+                "Resolves a natural-language function or endpoint name to exact graph node IDs, "
+                "file paths, and line numbers from FalkorDB. ALWAYS call this first to anchor "
+                "the investigation to real nodes — never invent node identifiers."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol_name": {"type": "string", "description": "Function or endpoint name from the incident report, e.g. 'decrypt_card_token' or 'checkout'."},
+                    "tenant_id":   {"type": "string", "description": "Tenant repository namespace, default 'sample-fintech'."},
+                },
+                "required": ["symbol_name"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -449,13 +569,18 @@ OPENAI_MCP_TOOLS = [
         "type": "function",
         "function": {
             "name": "mcp_shortest_execution_path",
-            "description": "Finds the shortest call execution chain from an API entrypoint to the target function (Track 01).",
+            "description": (
+                "Finds the shortest call execution chain from an API entrypoint to the target function "
+                "using FalkorDB shortestPath. Returns structured nodes with file path and line number per hop, "
+                "plus the relationship types on each edge. Only cite paths returned by this tool — "
+                "never invent a path from your own knowledge (Track 01)."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "entrypoint_fn": {"type": "string", "description": "API entrypoint function, e.g. 'post_checkout_endpoint'."},
-                    "target_fn": {"type": "string", "description": "Target function, e.g. 'decrypt_card_token'."},
-                    "tenant_id": {"type": "string", "description": "Tenant repository namespace, default 'sample-fintech'."},
+                    "target_fn":     {"type": "string", "description": "Target function, e.g. 'decrypt_card_token'."},
+                    "tenant_id":     {"type": "string", "description": "Tenant repository namespace, default 'sample-fintech'."},
                 },
                 "required": ["entrypoint_fn", "target_fn"],
             },

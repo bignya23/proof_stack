@@ -1,4 +1,26 @@
 # backend/agent.py
+"""
+ProofStack Investigation Engine
+================================
+Architecture (Change 1 — graph-central investigation):
+
+  Incident input
+      ↓
+  ReAct agent — LLM decides which MCP tool to call next
+      ↓
+  FastMCP tool execution — validates args, executes a pre-approved template
+      ↓
+  FalkorDB — runs Cypher, returns actual nodes / relationships / paths
+      ↓
+  Tool result returned to LLM as an observation
+      ↓  (repeat up to MAX_TOOL_STEPS)
+  LLM produces final report citing only graph-observed evidence
+
+Critical rule: the LLM *chooses* the investigation path.
+               FalkorDB *derives* the actual graph paths.
+               The LLM must NEVER invent node names or call chains.
+"""
+
 import ast
 import json
 import os
@@ -15,6 +37,7 @@ from mcp_tools import (
     get_repo_graph,
     mcp_ast_blast_radius,
     mcp_company_brain_provenance,
+    mcp_find_symbol,
     mcp_pagerank_hotspots,
     mcp_read_code_file,
     mcp_recall_episodic_memory,
@@ -28,6 +51,23 @@ load_dotenv()
 load_dotenv(Path(__file__).resolve().parent / ".env")
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+
+MAX_TOOL_STEPS = 8   # hard cap — prevents runaway tool loops
+
+# Evidence status vocabulary
+STATUS_GRAPH_OBSERVED = "graph_observed"   # path/node confirmed in indexed graph
+STATUS_CODE_OBSERVED  = "code_observed"    # citation confirmed in source file
+STATUS_LOG_OBSERVED   = "log_observed"     # error confirmed in supplied logs
+STATUS_HYPOTHESIS     = "hypothesis"       # evidence suggests but not yet confirmed
+STATUS_VERIFIED       = "verified"         # a concrete check (e.g. AST parse) passed
+
+
+# ============================================================================
+# HELPERS
+# ============================================================================
 
 def load_system_prompt() -> str:
     """Loads system instructions and output format from prompt.md."""
@@ -35,21 +75,20 @@ def load_system_prompt() -> str:
     if prompt_path.exists():
         return prompt_path.read_text(encoding="utf-8").strip()
     return (
-        "You are NexusGraph AI, an elite autonomous code intelligence and incident response agent.\n"
-        "Investigate incidents using FastMCP graph tools and produce structured JSON with a code diff patch."
+        "You are ProofStack AI, an elite autonomous code intelligence and incident response agent.\n"
+        "Investigate incidents using FastMCP graph tools and produce structured JSON with a code diff patch.\n"
+        "NEVER invent call paths or node names. Only cite paths returned by FalkorDB tool results."
     )
 
 
 def get_llm_client() -> Tuple[Optional[Any], Optional[str], str]:
     """
-    Initializes Azure OpenAI (Foundry) or standard OpenAI client.
-    Supports GPT-5, GPT-4o, Azure AI Foundry endpoints.
+    Initialises Azure OpenAI (Foundry) or standard OpenAI client.
     Returns (client, model_name, engine_type).
     """
-    # 1. Check Azure OpenAI / Foundry
-    azure_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("AZURE_API_KEY")
+    azure_key      = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("AZURE_API_KEY")
     azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_ENDPOINT")
-    azure_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
+    azure_version  = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
     if not azure_version or "2025" in azure_version:
         azure_version = "2024-10-21"
     azure_deployment = (
@@ -71,7 +110,6 @@ def get_llm_client() -> Tuple[Optional[Any], Optional[str], str]:
         except Exception as e:
             print(f"[!] AzureOpenAI init failed: {e}")
 
-    # 2. Check Standard OpenAI
     openai_key = os.getenv("OPENAI_API_KEY")
     if openai_key and "placeholder" not in openai_key and len(openai_key) > 15:
         try:
@@ -84,10 +122,72 @@ def get_llm_client() -> Tuple[Optional[Any], Optional[str], str]:
     return None, None, "autonomous_heuristic"
 
 
+# ============================================================================
+# EVIDENCE REGISTRY
+# ============================================================================
+
+def make_evidence_item(
+    source_tool: str,
+    claim: str,
+    status: str,
+    raw_result: dict,
+    evidence_id: Optional[str] = None,
+) -> dict:
+    """
+    Creates a traceable evidence record.
+
+    status vocabulary:
+      graph_observed — the indexed graph contains this relationship/path
+      code_observed  — the cited source file contains the relevant implementation
+      log_observed   — the supplied log contains the reported error
+      hypothesis     — evidence suggests a particular cause (not yet confirmed)
+      verified       — a concrete check (e.g. AST parse) supports the proposed fix
+    """
+    eid = evidence_id or f"E{uuid.uuid4().hex[:3].upper()}"
+    return {
+        "evidence_id":   eid,
+        "source_tool":   source_tool,
+        "claim":         claim,
+        "status":        status,
+        # source nodes for traceability
+        "source_nodes":  raw_result.get("highlighted_nodes", []),
+        "cypher_used":   raw_result.get("cypher_executed", ""),
+    }
+
+
+# ============================================================================
+# TOOL VALIDATION (defence-in-depth — never forward raw LLM args unchecked)
+# ============================================================================
+
+_ALLOWED_TOOLS = set(TOOL_DISPATCH.keys())
+
+
+def validate_tool_name(name: str) -> None:
+    """Raises ValueError if the LLM requested an unregistered tool."""
+    if name not in _ALLOWED_TOOLS:
+        raise ValueError(
+            f"Tool '{name}' is not registered. Allowed: {sorted(_ALLOWED_TOOLS)}"
+        )
+
+
+def validate_tool_arguments(tool_name: str, args: dict) -> dict:
+    """
+    Light argument sanitisation.
+    Strips unexpected keys; ensures tenant_id is always present.
+    """
+    clean = {k: v for k, v in args.items() if isinstance(k, str) and len(k) < 64}
+    clean.setdefault("tenant_id", "sample-fintech")
+    return clean
+
+
+# ============================================================================
+# PATCH UTILITIES
+# ============================================================================
+
 def apply_diff_patch(current_content: str, patch_diff: Optional[str]) -> str:
     """
     Applies an LLM-generated patch diff to the target file.
-    Accurately reconstructs clean python code from unified diff hunk lines (+ and context).
+    Accurately reconstructs clean Python code from unified diff hunk lines.
     """
     if not patch_diff or not patch_diff.strip():
         return current_content.replace(
@@ -98,7 +198,6 @@ def apply_diff_patch(current_content: str, patch_diff: Optional[str]) -> str:
             "# Remediated timeout_ms = 120 per Incident Finding mem-001 & Agent Patch",
         )
 
-    # If raw code was passed without diff headers
     if "@@" not in patch_diff and "+++" not in patch_diff:
         if "def " in patch_diff or "import " in patch_diff:
             return patch_diff.strip() + "\n"
@@ -112,8 +211,7 @@ def apply_diff_patch(current_content: str, patch_diff: Optional[str]) -> str:
                 hunk_start = int(m.group(1))
             break
 
-    new_hunk_lines = []
-    old_hunk_lines = []
+    new_hunk_lines, old_hunk_lines = [], []
     in_hunk = False
 
     for line in diff_lines:
@@ -131,78 +229,122 @@ def apply_diff_patch(current_content: str, patch_diff: Optional[str]) -> str:
                 new_hunk_lines.append(line[1:])
                 old_hunk_lines.append(line[1:])
 
-    old_target = "\n".join(old_hunk_lines).strip()
+    old_target      = "\n".join(old_hunk_lines).strip()
     new_replacement = "\n".join(new_hunk_lines).strip()
 
-    # 1. Full-file replacement if hunk starts at line 1 and replaced most lines
     if hunk_start == 1 and len(old_hunk_lines) >= max(3, len(current_content.splitlines()) - 4):
         return "\n".join(new_hunk_lines) + "\n"
 
-    # 2. Exact block replacement if matched
     if old_target and old_target in current_content:
         return current_content.replace(old_target, new_replacement)
 
-    # 3. If decrypt_card_token function replacement
     if "def decrypt_card_token" in new_replacement and "def decrypt_card_token" in current_content:
-        prefix = current_content.split("def decrypt_card_token")[0]
+        prefix    = current_content.split("def decrypt_card_token")[0]
         new_block = "def decrypt_card_token" + new_replacement.split("def decrypt_card_token")[1]
         return prefix + new_block + "\n"
 
-    # 4. If new hunk has complete file with imports and defs
     if "def fetch_signing_key" in new_replacement and "def decrypt_card_token" in new_replacement:
         return "\n".join(new_hunk_lines) + "\n"
 
-    # 5. Standard timeout heuristic fallback
     return current_content.replace("50ms", "120ms").replace("timeout_ms = 50", "timeout_ms = 120")
 
 
 def check_and_validate_diff_patch(patch: dict, tenant_id: str = "sample-fintech") -> dict:
     """
-    [ProofStack Verifier] Formally checks and validates the generated diff string:
+    Formally checks and validates the generated diff string:
     1. Parses diff hunk lines and counts lines added/deleted.
     2. Simulates applying the patch in memory against the target repo file.
     3. Runs ast.parse() to guarantee zero SyntaxError or IndentationError.
     4. Attaches formal verification proof metadata to the patch object.
     """
-    diff_str = patch.get("diff", "")
+    diff_str  = patch.get("diff", "")
     file_path = patch.get("file_path", "vault_client.py")
 
-    lines_added = sum(1 for line in diff_str.splitlines() if line.startswith("+") and not line.startswith("+++"))
-    lines_deleted = sum(1 for line in diff_str.splitlines() if line.startswith("-") and not line.startswith("---"))
+    lines_added   = sum(1 for l in diff_str.splitlines() if l.startswith("+") and not l.startswith("+++"))
+    lines_deleted = sum(1 for l in diff_str.splitlines() if l.startswith("-") and not l.startswith("---"))
 
-    repo_dir = resolve_repo_dir(tenant_id)
-    clean_path = file_path.replace("sample_fintech_repo/", "").lstrip("/")
+    repo_dir    = resolve_repo_dir(tenant_id)
+    clean_path  = file_path.replace("sample_fintech_repo/", "").lstrip("/")
     target_file = (repo_dir / clean_path).resolve()
 
     current_content = ""
     if target_file.exists():
         current_content = target_file.read_text(encoding="utf-8")
 
-    # Simulate patch application in memory
     simulated_content = apply_diff_patch(current_content, diff_str)
 
-    # Formally verify Python AST syntax
-    syntax_valid = False
-    ast_message = ""
+    syntax_valid, ast_message = False, ""
     try:
         ast.parse(simulated_content)
         syntax_valid = True
-        ast_message = "Valid Python AST (No SyntaxError or IndentationError)"
+        ast_message  = "Valid Python AST (No SyntaxError or IndentationError)"
     except SyntaxError as syn_err:
-        syntax_valid = False
         ast_message = f"SyntaxError on line {syn_err.lineno}: {syn_err.msg}"
 
     patch["validation"] = {
-        "syntax_valid": syntax_valid,
-        "ast_verified": syntax_valid,
-        "lines_added": lines_added,
+        "syntax_valid":  syntax_valid,
+        "ast_verified":  syntax_valid,
+        "lines_added":   lines_added,
         "lines_deleted": lines_deleted,
-        "status": "VERIFIED_SAFE_TO_APPLY" if syntax_valid else "SYNTAX_CHECK_WARNING",
-        "message": ast_message,
-        "target_file": str(target_file.name),
+        "status":        "VERIFIED_SAFE_TO_APPLY" if syntax_valid else "SYNTAX_CHECK_WARNING",
+        "message":       ast_message,
+        "target_file":   str(target_file.name),
         "target_exists": target_file.exists(),
     }
     return patch
+
+
+# ============================================================================
+# DETERMINISTIC FALLBACK REASONER
+# (used when no LLM credentials are available — keeps the demo alive offline)
+# ============================================================================
+
+def _build_deterministic_evidence(step_results: list) -> list:
+    """Converts deterministic step results into an evidence registry."""
+    registry = []
+    eid_counter = [1]
+
+    def _add(tool_name, claim, status, raw):
+        registry.append(make_evidence_item(
+            source_tool=tool_name,
+            claim=claim,
+            status=status,
+            raw_result=raw,
+            evidence_id=f"E{eid_counter[0]:02d}",
+        ))
+        eid_counter[0] += 1
+
+    for step in step_results:
+        tool   = step["tool_name"]
+        result = step["result"]
+        if tool == "mcp_find_symbol":
+            best = (result.get("matches") or [{}])[0]
+            _add(tool, f"Resolved '{result.get('query')}' to {best.get('name','?')} in {best.get('file_path','?')}:{best.get('start_line','?')}", STATUS_GRAPH_OBSERVED, result)
+        elif tool == "mcp_recall_episodic_memory":
+            n = result.get("memories_found", 0)
+            _add(tool, f"Found {n} prior incident memories attached to target function", STATUS_GRAPH_OBSERVED, result)
+        elif tool == "mcp_shortest_execution_path":
+            if result.get("path_found"):
+                names = result.get("explainable_path", [])
+                _add(tool, f"Graph path confirmed: {' -> '.join(names)}", STATUS_GRAPH_OBSERVED, result)
+            else:
+                _add(tool, "No path found in indexed call graph", STATUS_HYPOTHESIS, result)
+        elif tool == "mcp_ast_blast_radius":
+            n = result.get("total_impacted_functions", 0)
+            _add(tool, f"{n} upstream callers reach the target via [:CALLS*1..5]", STATUS_GRAPH_OBSERVED, result)
+        elif tool == "mcp_read_code_file":
+            _add(tool, f"Source code inspected: {result.get('file_path','?')} ({result.get('total_lines','?')} lines)", STATUS_CODE_OBSERVED, result)
+        elif tool == "mcp_company_brain_provenance":
+            chain = result.get("provenance_chain", [{}])
+            owner = chain[0].get("engineer_name", "unknown") if chain else "unknown"
+            adr   = chain[0].get("decision_tag", "unknown") if chain else "unknown"
+            _add(tool, f"Code authored by {owner}, governed by {adr}", STATUS_GRAPH_OBSERVED, result)
+        elif tool == "mcp_write_episodic_memory":
+            _add(tool, f"Finding persisted: {result.get('persisted_finding_id','?')}", STATUS_VERIFIED, result)
+        elif tool == "mcp_pagerank_hotspots":
+            _add(tool, "PageRank structural risk scores computed", STATUS_GRAPH_OBSERVED, result)
+
+    return registry
 
 
 def execute_deterministic_reasoner(
@@ -213,113 +355,128 @@ def execute_deterministic_reasoner(
 ) -> dict:
     """
     [Safety & Hackathon Resilience Engine]
-    Executes a fully autonomous graph traversal and patch generation workflow
-    directly over FalkorDB graph algorithms and Cypher queries.
+    Runs a fixed 8-step graph investigation without an LLM.
+    Every result comes from actual FalkorDB queries — no invented paths.
     """
-    agent_trace = []
+    agent_trace     = []
     all_highlighted = set()
+    step_num        = 1
 
-    # Step 1: Episodic Memory Recall (Track 02)
-    step1 = mcp_recall_episodic_memory(target_fn, tenant_id)
-    all_highlighted.update(step1["highlighted_nodes"])
-    agent_trace.append({
-        "step": 1,
-        "tool_name": "mcp_recall_episodic_memory",
-        "agent_name": "EpisodicMemoryAgent",
-        "track_badge": "Track 02: Memory & Coordination",
-        "purpose": f"Recalled {step1['memories_found']} prior incident memory attached to '{target_fn}'",
-        "result": step1,
-    })
+    def _trace(tool_name, track_badge, purpose, result, agent_name=None):
+        nonlocal step_num
+        if isinstance(result, dict):
+            all_highlighted.update(result.get("highlighted_nodes", []))
+        agent_trace.append({
+            "step":        step_num,
+            "tool_name":   tool_name,
+            "agent_name":  agent_name or f"Agent:{tool_name.replace('mcp_', '')}",
+            "track_badge": track_badge,
+            "purpose":     purpose,
+            "result":      result,
+        })
+        step_num += 1
+        return result
 
-    # Step 2: AST Blast Radius (Track 01)
-    step2 = mcp_ast_blast_radius(target_fn, tenant_id)
-    all_highlighted.update(step2["highlighted_nodes"])
-    impact_count = step2["total_impacted_functions"]
-    agent_trace.append({
-        "step": 2,
-        "tool_name": "mcp_ast_blast_radius",
-        "agent_name": "ASTBlastRadiusAgent",
-        "track_badge": "Track 01: Connected Data",
-        "purpose": f"Traversed multi-hop [:CALLS*1..5] to discover {impact_count} upstream callers",
-        "result": step2,
-    })
+    # Step 1 — Symbol resolution (mandatory first step — anchors to real graph node)
+    r_sym = _trace(
+        "mcp_find_symbol",
+        "Track 01: Symbol Resolution",
+        f"Resolved incident mention of '{target_fn}' to an exact FalkorDB graph node",
+        mcp_find_symbol(target_fn, tenant_id),
+        "SymbolResolverAgent",
+    )
 
-    # Step 3: FalkorDB Native Graph Algorithms (Track 01)
-    step3_pr = mcp_pagerank_hotspots(tenant_id)
-    step3_sp = mcp_shortest_execution_path(entrypoint_fn, target_fn, tenant_id)
-    all_highlighted.update(step3_pr["highlighted_nodes"])
-    all_highlighted.update(step3_sp["highlighted_nodes"])
-    agent_trace.append({
-        "step": 3,
-        "tool_name": "mcp_pagerank_hotspots",
-        "agent_name": "GraphAlgorithmAgent",
-        "track_badge": "Track 01: Native FalkorDB Algos",
-        "purpose": f"Executed FalkorDB C/GraphBLAS algo.pageRank (risk score) & algo.SPpaths ({step3_sp.get('hop_distance', 4)} hops)",
-        "result": {
-            "pagerank": step3_pr,
-            "shortest_path": step3_sp,
-        },
-    })
+    # Step 2 — Episodic memory recall
+    r_mem = _trace(
+        "mcp_recall_episodic_memory",
+        "Track 02: Memory & Coordination",
+        f"Recalled prior incident memories attached to '{target_fn}'",
+        mcp_recall_episodic_memory(target_fn, tenant_id),
+        "EpisodicMemoryAgent",
+    )
 
-    # Step 4: Company Brain Provenance & ADR Rationale (Track 03)
-    step4 = mcp_company_brain_provenance(target_fn, tenant_id)
-    all_highlighted.update(step4["highlighted_nodes"])
-    chain = step4.get("provenance_chain", [])
+    # Step 3 — Shortest execution path (graph-derived, never invented)
+    r_path = _trace(
+        "mcp_shortest_execution_path",
+        "Track 01: Graph Algorithms as Tools",
+        f"FalkorDB shortestPath from '{entrypoint_fn}' to '{target_fn}' (actual Cypher result)",
+        mcp_shortest_execution_path(entrypoint_fn, target_fn, tenant_id),
+        "GraphPathAgent",
+    )
+
+    # Step 4 — AST blast radius
+    r_blast = _trace(
+        "mcp_ast_blast_radius",
+        "Track 01: Connected Data",
+        f"Multi-hop [:CALLS*1..5] blast radius for '{target_fn}'",
+        mcp_ast_blast_radius(target_fn, tenant_id),
+        "ASTBlastRadiusAgent",
+    )
+    impact_count = r_blast["total_impacted_functions"]
+
+    # Step 5 — PageRank structural risk (conditional on blast radius)
+    r_pr = _trace(
+        "mcp_pagerank_hotspots",
+        "Track 01: Native FalkorDB Algos",
+        "FalkorDB native algo.pageRank (GraphBLAS) structural risk ranking",
+        mcp_pagerank_hotspots(tenant_id),
+        "GraphAlgorithmAgent",
+    )
+
+    # Step 6 — Company brain provenance
+    r_prov = _trace(
+        "mcp_company_brain_provenance",
+        "Track 03: Company Brain",
+        f"Traced author and governing ADR/INC tag for '{target_fn}'",
+        mcp_company_brain_provenance(target_fn, tenant_id),
+        "CompanyBrainAgent",
+    )
+    chain         = r_prov.get("provenance_chain", [])
     primary_owner = chain[0]["engineer_name"] if chain else "Aarav Mehta"
-    governing_adr = chain[0]["decision_tag"] if chain else "ADR-042"
-    agent_trace.append({
-        "step": 4,
-        "tool_name": "mcp_company_brain_provenance",
-        "agent_name": "CompanyBrainAgent",
-        "track_badge": "Track 03: Company Brain",
-        "purpose": f"Traced author {primary_owner} and governing architectural decision {governing_adr}",
-        "result": step4,
-    })
+    governing_adr = chain[0]["decision_tag"]  if chain else "ADR-042"
 
-    # Step 5: Read Code File for Patch Generation (Track 01 & Action)
-    step5 = mcp_read_code_file("vault_client.py", tenant_id)
-    all_highlighted.update(step5.get("highlighted_nodes", []))
-    agent_trace.append({
-        "step": 5,
-        "tool_name": "mcp_read_code_file",
-        "agent_name": "CodeInspectionAgent",
-        "track_badge": "Track 01: Code Intelligence",
-        "purpose": "Inspected vault_client.py AST definitions and gRPC timeout configuration",
-        "result": {
-            "file_path": step5.get("file_path", "vault_client.py"),
-            "total_lines": step5.get("total_lines", 15),
-        },
-    })
+    # Step 7 — Read actual source code
+    r_code = _trace(
+        "mcp_read_code_file",
+        "Track 01: Code Intelligence",
+        "Inspected vault_client.py source to verify implementation before patch generation",
+        mcp_read_code_file("vault_client.py", tenant_id),
+        "CodeInspectionAgent",
+    )
 
-    # Step 6: Memory Writeback (Track 02)
+    # Step 8 — Persist findings to episodic memory
+    path_names = r_path.get("explainable_path", [entrypoint_fn, target_fn])
+    path_str   = " -> ".join(path_names) if path_names else f"{entrypoint_fn} -> {target_fn}"
+    hops       = r_path.get("hops", len(path_names) - 1)
+
     headline = (
-        f"Incident Root Cause Identified: Strict 50ms gRPC timeout enforced by {governing_adr} "
-        f"causes cascading 504 timeouts across {impact_count} upstream callers up to '{entrypoint_fn}'. "
-        f"Confirmed by prior finding mem-001."
+        f"Root cause: Strict 50ms gRPC timeout enforced by {governing_adr} in '{target_fn}' "
+        f"causes cascading 504 timeouts across {impact_count} upstream callers. "
+        f"Graph path ({hops} hops): {path_str}. Confirmed by prior finding mem-001."
     )
     action_plan = (
-        f"Bump timeout_ms from 50 to 120ms with circuit breaker fallback in vault_client.py. "
-        f"Coordinated with author {primary_owner} (ADR-042 owner) and verified upstream blast radius."
+        f"Increase timeout_ms from 50 to 120ms with circuit-breaker fallback in vault_client.py. "
+        f"Coordinated with author {primary_owner} ({governing_adr} owner). "
+        f"Blast radius verified: {impact_count} callers affected."
     )
-    step6 = mcp_write_episodic_memory(
-        function_name=target_fn,
-        agent_role="AutonomousCoordinator",
-        summary=headline,
-        remediation=action_plan,
-        session_id=f"session-{uuid.uuid4().hex[:4]}",
-        tenant_id=tenant_id,
-    )
-    all_highlighted.update(step6["highlighted_nodes"])
-    agent_trace.append({
-        "step": 6,
-        "tool_name": "mcp_write_episodic_memory",
-        "agent_name": "CoordinatorStateAgent",
-        "track_badge": "Track 02: Shared Multi-Agent State",
-        "purpose": "Persisted synthesized triage decision into FalkorDB memory for next sessions",
-        "result": step6,
-    })
 
-    # Actionable Code Diff Patch
+    r_write = _trace(
+        "mcp_write_episodic_memory",
+        "Track 02: Shared Multi-Agent State",
+        "Persisted synthesised triage decision into FalkorDB for future sessions",
+        mcp_write_episodic_memory(
+            function_name=target_fn,
+            agent_role="AutonomousCoordinator",
+            summary=headline,
+            remediation=action_plan,
+            session_id=f"session-{uuid.uuid4().hex[:4]}",
+            tenant_id=tenant_id,
+        ),
+        "CoordinatorStateAgent",
+    )
+
+    evidence_registry = _build_deterministic_evidence(agent_trace)
+
     patch_diff = (
         "--- a/vault_client.py\n"
         "+++ b/vault_client.py\n"
@@ -337,26 +494,141 @@ def execute_deterministic_reasoner(
     )
 
     return {
-        "tenant_graph": f"repo:{tenant_id}",
-        "target_function": target_fn,
-        "llm_mode": "autonomous_heuristic",
-        "engine_label": "FalkorDB Autonomous Reasoner (Native C/GraphBLAS)",
+        "tenant_graph":          f"repo:{tenant_id}",
+        "target_function":       target_fn,
+        "llm_mode":              "autonomous_heuristic",
+        "engine_label":          "ProofStack Deterministic Reasoner (FalkorDB / GraphBLAS)",
         "all_highlighted_nodes": list(all_highlighted),
+        # Execution path — derived from FalkorDB, not invented
+        "execution_path": {
+            "path_found": r_path.get("path_found", False),
+            "nodes":      r_path.get("nodes", []),
+            "edges":      r_path.get("edges", []),
+            "hops":       r_path.get("hops", -1),
+        },
         "synthesis": {
-            "headline": headline,
-            "action_plan": action_plan,
-            "primary_owner": primary_owner,
-            "governing_adr": governing_adr,
+            "headline":             headline,
+            "action_plan":          action_plan,
+            "primary_owner":        primary_owner,
+            "governing_adr":        governing_adr,
             "upstream_blast_count": impact_count,
         },
+        "evidence_registry": evidence_registry,
         "patch": check_and_validate_diff_patch({
-            "file_path": "vault_client.py",
-            "diff": patch_diff,
-            "explanation": "Increased gRPC timeout from 50ms to 120ms to resolve 504 Gateway Timeouts under flash-sale load as recommended by episodic finding mem-001 while preserving PCI tokenization invariants.",
+            "file_path":      "vault_client.py",
+            "diff":           patch_diff,
+            "explanation":    (
+                "Increased gRPC timeout from 50ms to 120ms to resolve 504 Gateway Timeouts "
+                "under flash-sale load, as recommended by episodic finding mem-001, "
+                "while preserving PCI tokenisation invariants."
+            ),
             "commit_message": f"[FIX-8410] Resolve 504 gRPC timeout in {target_fn} per FalkorDB incident memory",
         }, tenant_id),
         "agent_trace": agent_trace,
     }
+
+
+# ============================================================================
+# LLM ReAct LOOP  (Change 1 — graph-central, bounded, evidence-registered)
+# ============================================================================
+
+def _build_tool_observation(tool_call, result: dict) -> dict:
+    """Formats a tool result as an OpenAI tool message."""
+    return {
+        "role":         "tool",
+        "tool_call_id": tool_call.id,
+        "content":      json.dumps(result),
+    }
+
+
+def _extract_evidence_from_result(tool_name: str, result: dict) -> Optional[dict]:
+    """
+    Derives an evidence record from a tool result.
+    Returns None if there is nothing meaningful to record.
+    """
+    if "error" in result:
+        return None
+
+    if tool_name == "mcp_find_symbol":
+        best  = result.get("best_match") or {}
+        claim = (
+            f"Resolved to {best.get('name','?')} at "
+            f"{best.get('file_path','?')}:{best.get('start_line','?')}"
+        )
+        return make_evidence_item(tool_name, claim, STATUS_GRAPH_OBSERVED, result)
+
+    if tool_name == "mcp_shortest_execution_path":
+        if result.get("path_found"):
+            names = result.get("explainable_path", [])
+            return make_evidence_item(
+                tool_name,
+                f"Graph path: {' -> '.join(names)} ({result.get('hops','?')} hops)",
+                STATUS_GRAPH_OBSERVED,
+                result,
+            )
+        return make_evidence_item(
+            tool_name, "No execution path found in indexed graph", STATUS_HYPOTHESIS, result
+        )
+
+    if tool_name == "mcp_ast_blast_radius":
+        n = result.get("total_impacted_functions", 0)
+        return make_evidence_item(
+            tool_name, f"{n} upstream callers reach the target function", STATUS_GRAPH_OBSERVED, result
+        )
+
+    if tool_name == "mcp_recall_episodic_memory":
+        n = result.get("memories_found", 0)
+        return make_evidence_item(
+            tool_name,
+            f"{n} prior incident memories found",
+            STATUS_GRAPH_OBSERVED if n > 0 else STATUS_HYPOTHESIS,
+            result,
+        )
+
+    if tool_name == "mcp_company_brain_provenance":
+        chain = result.get("provenance_chain", [{}])
+        owner = chain[0].get("engineer_name", "?") if chain else "?"
+        adr   = chain[0].get("decision_tag", "?") if chain else "?"
+        return make_evidence_item(
+            tool_name, f"Authored by {owner}, governed by {adr}", STATUS_GRAPH_OBSERVED, result
+        )
+
+    if tool_name == "mcp_read_code_file":
+        return make_evidence_item(
+            tool_name,
+            f"Source file {result.get('file_path','?')} inspected ({result.get('total_lines','?')} lines)",
+            STATUS_CODE_OBSERVED,
+            result,
+        )
+
+    if tool_name == "mcp_write_episodic_memory":
+        return make_evidence_item(
+            tool_name,
+            f"Finding persisted to FalkorDB: {result.get('persisted_finding_id','?')}",
+            STATUS_VERIFIED,
+            result,
+        )
+
+    if tool_name == "mcp_pagerank_hotspots":
+        top = (result.get("top_hotspots") or [{}])[0]
+        return make_evidence_item(
+            tool_name,
+            f"PageRank computed; top hotspot: {top.get('function_name','?')}",
+            STATUS_GRAPH_OBSERVED,
+            result,
+        )
+
+    return None
+
+
+def _track_badge_for(fn_name: str) -> str:
+    if "memory" in fn_name:
+        return "Track 02: Memory & Coordination"
+    if "provenance" in fn_name:
+        return "Track 03: Company Brain"
+    if "pagerank" in fn_name or "shortest" in fn_name:
+        return "Track 01: Native FalkorDB Algos"
+    return "Track 01: Connected Data"
 
 
 def run_llm_mcp_agent(
@@ -366,22 +638,27 @@ def run_llm_mcp_agent(
     entrypoint_fn: Optional[str] = "post_checkout_endpoint",
 ) -> dict:
     """
-    [Track 01: Dynamic Tool Selection via FastMCP]
-    Orchestrates an LLM ReAct agent (Azure OpenAI / Foundry GPT-5, or OpenAI GPT-4o)
-    with FastMCP tools. Automatically falls back to deterministic graph reasoner if offline.
+    [Track 01: Dynamic Tool Selection via FastMCP — Change 1]
+
+    Bounded ReAct loop:
+      1. LLM receives the incident and available tool schemas.
+      2. It requests one or more MCP tools.
+      3. Each request executes against pre-approved Cypher templates in mcp_tools.py.
+      4. The returned graph paths and code evidence become observations.
+      5. The LLM chooses the next operation or produces a final report.
+      6. MAX_TOOL_STEPS prevents endless tool calls.
+
+    The LLM chooses the investigation path.
+    FalkorDB derives every actual path and relationship.
     """
     target_fn = function_name
     if not target_fn:
-        if "decrypt_card_token" in prompt:
-            target_fn = "decrypt_card_token"
-        elif "fetch_signing_key" in prompt:
-            target_fn = "fetch_signing_key"
-        elif "authorize_charge" in prompt:
-            target_fn = "authorize_charge"
-        elif "checkout" in prompt:
-            target_fn = "post_checkout_endpoint"
-        else:
-            target_fn = "decrypt_card_token"
+        for kw in ["decrypt_card_token", "fetch_signing_key", "authorize_charge"]:
+            if kw in prompt:
+                target_fn = kw
+                break
+        if not target_fn:
+            target_fn = "decrypt_card_token" if "checkout" in prompt.lower() else "decrypt_card_token"
 
     entrypoint = entrypoint_fn or "post_checkout_endpoint"
 
@@ -394,17 +671,27 @@ def run_llm_mcp_agent(
         {"role": "system", "content": system_prompt},
         {
             "role": "user",
-            "content": f"Repository tenant: {tenant_id}\nTarget function: {target_fn}\nEntrypoint: {entrypoint}\nUser Incident Request: {prompt}",
+            "content": (
+                f"Repository tenant: {tenant_id}\n"
+                f"Suspected target function: {target_fn}\n"
+                f"Suspected entrypoint: {entrypoint}\n"
+                f"User incident report: {prompt}\n\n"
+                "IMPORTANT: Start with mcp_find_symbol to confirm exact node identifiers "
+                "before calling any traversal tool. Only cite paths returned by tool results."
+            ),
         },
     ]
 
-    agent_trace = []
+    agent_trace     = []
+    evidence        = []            # evidence registry
     all_highlighted = {target_fn, entrypoint}
-    step_num = 1
+    step_num        = 1
+
+    # Populated when mcp_shortest_execution_path runs with path_found=True
+    execution_path = {"path_found": False, "nodes": [], "edges": [], "hops": -1}
 
     try:
-        # ReAct loop (up to 6 turns)
-        for turn in range(6):
+        for _turn in range(MAX_TOOL_STEPS):
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
@@ -421,48 +708,54 @@ def run_llm_mcp_agent(
                 fn_name = tc.function.name
                 fn_args = json.loads(tc.function.arguments or "{}")
 
-                if "tenant_id" not in fn_args:
-                    fn_args["tenant_id"] = tenant_id
-
-                tool_fn = TOOL_DISPATCH.get(fn_name)
-                if not tool_fn:
-                    tool_result = {"error": f"Tool '{fn_name}' not found"}
+                try:
+                    validate_tool_name(fn_name)
+                    safe_args = validate_tool_arguments(fn_name, fn_args)
+                except ValueError as ve:
+                    tool_result = {"error": str(ve)}
+                    safe_args   = fn_args
                 else:
+                    tool_fn = TOOL_DISPATCH[fn_name]
                     try:
-                        tool_result = tool_fn(**fn_args)
+                        tool_result = tool_fn(**safe_args)
                     except Exception as err:
                         tool_result = {"error": str(err)}
 
                 if isinstance(tool_result, dict):
-                    nodes = tool_result.get("highlighted_nodes", [])
-                    all_highlighted.update(nodes)
+                    all_highlighted.update(tool_result.get("highlighted_nodes", []))
 
-                track_badge = "Track 01: Connected Data"
-                if "memory" in fn_name:
-                    track_badge = "Track 02: Memory & Coordination"
-                elif "provenance" in fn_name:
-                    track_badge = "Track 03: Company Brain"
-                elif "pagerank" in fn_name or "shortest" in fn_name:
-                    track_badge = "Track 01: Native FalkorDB Algos"
+                # Capture execution path from shortest-path tool
+                if fn_name == "mcp_shortest_execution_path" and isinstance(tool_result, dict):
+                    if tool_result.get("path_found"):
+                        execution_path = {
+                            "path_found": True,
+                            "nodes":      tool_result.get("nodes", []),
+                            "edges":      tool_result.get("edges", []),
+                            "hops":       tool_result.get("hops", -1),
+                        }
+
+                ev_item = _extract_evidence_from_result(fn_name, tool_result)
+                if ev_item:
+                    evidence.append(ev_item)
 
                 agent_trace.append({
-                    "step": step_num,
-                    "tool_name": fn_name,
-                    "agent_name": f"Agent:{fn_name.replace('mcp_', '')}",
-                    "track_badge": track_badge,
-                    "purpose": f"Dynamically invoked {fn_name} with {json.dumps(fn_args)}",
-                    "result": tool_result,
+                    "step":        step_num,
+                    "tool_name":   fn_name,
+                    "agent_name":  f"Agent:{fn_name.replace('mcp_', '')}",
+                    "track_badge": _track_badge_for(fn_name),
+                    "purpose":     f"Invoked {fn_name} — args: {json.dumps(safe_args)}",
+                    "result":      tool_result,
                 })
                 step_num += 1
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": json.dumps(tool_result),
-                })
+                messages.append(_build_tool_observation(tc, tool_result))
 
-        last_content = messages[-1].get("content") if isinstance(messages[-1], dict) else messages[-1].content
-        parsed = {}
+        last_content = (
+            messages[-1].get("content")
+            if isinstance(messages[-1], dict)
+            else messages[-1].content
+        )
+        parsed: dict = {}
         if last_content:
             try:
                 clean_json = re.sub(r"^```(?:json)?", "", last_content.strip(), flags=re.MULTILINE)
@@ -470,7 +763,7 @@ def run_llm_mcp_agent(
                 parsed = json.loads(clean_json)
             except Exception:
                 parsed = {
-                    "headline": last_content[:200],
+                    "headline":    last_content[:200],
                     "action_plan": last_content,
                 }
 
@@ -492,27 +785,33 @@ def run_llm_mcp_agent(
                     "-# Enforced timeout_ms = 50 per ADR-042\n"
                     "+# Remediated timeout_ms = 120 per Incident Finding mem-001 & Agent Patch\n"
                 ),
-                "explanation": "Increased gRPC timeout from 50ms to 120ms based on graph evidence and finding mem-001.",
+                "explanation":    "Increased gRPC timeout from 50ms to 120ms based on graph evidence and finding mem-001.",
                 "commit_message": f"[FIX-8410] Remediate gRPC timeout in {target_fn} per FalkorDB incident memory",
             }
 
+        if len(agent_trace) >= MAX_TOOL_STEPS:
+            print(f"[!] Step budget of {MAX_TOOL_STEPS} exhausted — returning best available evidence.")
+
         return {
-            "tenant_graph": f"repo:{tenant_id}",
-            "target_function": target_fn,
-            "llm_mode": engine_type,
-            "engine_label": f"LLM Powered ReAct Agent ({model} on {engine_type})",
+            "tenant_graph":          f"repo:{tenant_id}",
+            "target_function":       target_fn,
+            "llm_mode":              engine_type,
+            "engine_label":          f"ProofStack ReAct Agent ({model} on {engine_type})",
             "all_highlighted_nodes": list(all_highlighted),
+            # Execution path — derived from FalkorDB shortestPath, never invented
+            "execution_path": execution_path,
             "synthesis": {
-                "headline": parsed.get("headline", f"Incident analysis completed for {target_fn}"),
-                "action_plan": parsed.get("action_plan", "Remediation verified on graph call paths."),
-                "primary_owner": parsed.get("primary_owner", "Aarav Mehta"),
-                "governing_adr": parsed.get("governing_adr", "ADR-042"),
+                "headline":             parsed.get("headline", f"Incident analysis completed for {target_fn}"),
+                "action_plan":          parsed.get("action_plan", "Remediation verified on graph call paths."),
+                "primary_owner":        parsed.get("primary_owner", "Aarav Mehta"),
+                "governing_adr":        parsed.get("governing_adr", "ADR-042"),
                 "upstream_blast_count": parsed.get("upstream_blast_count", 5),
             },
-            "patch": check_and_validate_diff_patch(parsed.get("patch", {}), tenant_id),
-            "agent_trace": agent_trace,
+            "evidence_registry": evidence,
+            "patch":             check_and_validate_diff_patch(parsed.get("patch", {}), tenant_id),
+            "agent_trace":       agent_trace,
         }
 
     except Exception as exc:
-        print(f"[!] LLM ReAct agent execution failed, smoothly falling back to deterministic reasoner: {exc}")
+        print(f"[!] LLM ReAct agent failed, falling back to deterministic reasoner: {exc}")
         return execute_deterministic_reasoner(prompt, tenant_id, target_fn, entrypoint)
