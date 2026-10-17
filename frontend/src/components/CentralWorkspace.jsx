@@ -48,15 +48,36 @@ export default function CentralWorkspace({
   // Active tab object
   const activeTab = openTabs.find(t => t.id === activeTabId) || openTabs[0];
 
-  // Fetch file content when active tab is a file
+  const clearHighlight = () => {
+    setHighlightLine(null);
+    if (editorRef.current) {
+      decorationsRef.current = editorRef.current.deltaDecorations(decorationsRef.current, []);
+    }
+  };
+
+  // Fetch file content when active tab is a file and clear previous highlights
   useEffect(() => {
+    clearHighlight();
+
     if (activeTab && activeTab.type === 'file') {
       fetchFileContent(activeTab.path);
       if (activeTab.targetLine) {
         setHighlightLine(activeTab.targetLine);
       }
+    } else {
+      setFileContent(null);
     }
-  }, [activeTabId]);
+  }, [activeTabId, activeTab?.path]);
+
+  // When targetLine changes on active file tab
+  useEffect(() => {
+    if (activeTab && activeTab.type === 'file' && activeTab.targetLine) {
+      setHighlightLine(activeTab.targetLine);
+      if (editorRef.current) {
+        scrollToLine(activeTab.targetLine);
+      }
+    }
+  }, [activeTab?.targetLine]);
 
   const fetchFileContent = async (filePath) => {
     setFileLoading(true);
@@ -74,13 +95,22 @@ export default function CentralWorkspace({
   const handleEditorMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+
+    // Remove highlighting if user clicks anywhere in the file editor
+    editor.onMouseDown(() => {
+      clearHighlight();
+      if (activeTab && activeTab.targetLine) {
+        activeTab.targetLine = null;
+      }
+    });
+
     if (highlightLine) {
       scrollToLine(highlightLine);
     }
   };
 
   const scrollToLine = (lineNum) => {
-    if (!editorRef.current || !monacoRef.current) return;
+    if (!editorRef.current || !monacoRef.current || !lineNum) return;
     const editor = editorRef.current;
     const monaco = monacoRef.current;
 
@@ -92,8 +122,8 @@ export default function CentralWorkspace({
         range: new monaco.Range(lineNum, 1, lineNum, 1),
         options: {
           isWholeLine: true,
-          className: 'bg-blue-500/20 border-l-4 border-blue-400',
-          glyphMarginClassName: 'bg-blue-400'
+          className: 'symbol-line-highlight',
+          glyphMarginClassName: 'symbol-line-glyph',
         }
       }
     ]);
@@ -173,7 +203,7 @@ export default function CentralWorkspace({
                 <span className="text-zinc-400 shrink-0 font-sans text-xs">Symbols:</span>
                 {fileContent.symbols.map(s => (
                   <button
-                    key={s.name}
+                    key={s.qname || `${s.name}:${s.lineno}`}
                     onClick={() => {
                       setHighlightLine(s.lineno);
                       scrollToLine(s.lineno);
@@ -185,7 +215,7 @@ export default function CentralWorkspace({
                         : "bg-zinc-900 border-zinc-800 hover:border-blue-500/50 hover:bg-zinc-850 font-medium"
                     }`}
                   >
-                    <span className="font-bold text-blue-400 font-mono">fn</span>
+                    <span className="font-bold text-blue-400 font-mono">{s.kind === 'class' ? 'cls' : 'fn'}</span>
                     <span className="font-mono">{s.name}</span>
                     <span className="text-zinc-500 font-mono">:{s.lineno}</span>
                   </button>
@@ -214,7 +244,7 @@ export default function CentralWorkspace({
                     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
                     lineNumbers: "on",
                     scrollBeyondLastLine: false,
-                    renderLineHighlight: "all",
+                    renderLineHighlight: "line",
                     folding: true,
                   }}
                 />

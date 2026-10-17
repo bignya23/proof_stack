@@ -115,6 +115,17 @@ export default function GraphCanvas({
     }
   }, [dimensions]);
 
+  // When activeTenant changes, reset initial fit flag and smoothly center the new repository graph
+  useEffect(() => {
+    isInitialFitDone.current = false;
+    const timer = setTimeout(() => {
+      if (fgRef.current) {
+        fgRef.current.zoomToFit(400, 60);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [activeTenant]);
+
   // Collapsed modules state for 'overview' mode and grouping
   const [expandedModules, setExpandedModules] = useState(new Set());
   const [groupFunctionsByModule, setGroupFunctionsByModule] = useState(false);
@@ -128,6 +139,7 @@ export default function GraphCanvas({
   const [enabledRelTypes, setEnabledRelTypes] = useState({
     CALLS: true,
     DEFINES: true,
+    INHERITS: true,
     AUTHORED: true,
     MODIFIED: true,
   });
@@ -135,6 +147,7 @@ export default function GraphCanvas({
   // Enabled node entity types (excluding memory nodes)
   const [enabledNodeTypes, setEnabledNodeTypes] = useState({
     Function: true,
+    Class: true,
     Module: true,
     Commit: true,
     Engineer: true,
@@ -145,11 +158,13 @@ export default function GraphCanvas({
     setEnabledRelTypes({
       CALLS: true,
       DEFINES: true,
+      INHERITS: true,
       AUTHORED: false,
       MODIFIED: false,
     });
     setEnabledNodeTypes({
       Function: true,
+      Class: true,
       Module: true,
       Commit: false,
       Engineer: false,
@@ -160,12 +175,14 @@ export default function GraphCanvas({
     setEnabledRelTypes({
       CALLS: true,
       DEFINES: true,
+      INHERITS: true,
       AUTHORED: true,
       MODIFIED: true,
       RECORDED: true,
     });
     setEnabledNodeTypes({
       Function: true,
+      Class: true,
       Module: true,
       Commit: true,
       Engineer: true,
@@ -436,6 +453,8 @@ export default function GraphCanvas({
   // Node base color
   const getNodeColor = (node, isInvestigated) => {
     switch (node.label) {
+      case "Class":
+        return isInvestigated ? "#f59e0b" : "#a855f7"; // Vibrant Violet/Purple for Classes
       case "Function":
         return isInvestigated ? "#f59e0b" : "#38bdf8"; // Gold when investigated, Sky Blue otherwise
       case "Module":
@@ -443,7 +462,7 @@ export default function GraphCanvas({
       case "Engineer":
         return "#f97316"; // Orange
       case "Commit":
-        return "#a855f7"; // Purple
+        return "#c084fc"; // Lavender/Purple
       case "Finding":
         return "#ec4899"; // Pink
       case "Session":
@@ -972,7 +991,7 @@ export default function GraphCanvas({
               Relationship Types
             </label>
             <div className="grid grid-cols-2 gap-1.5 text-[11px] font-sans">
-              {['CALLS', 'DEFINES', 'AUTHORED', 'MODIFIED'].map(rel => (
+              {['CALLS', 'DEFINES', 'INHERITS', 'AUTHORED', 'MODIFIED'].map(rel => (
                 <label 
                   key={rel}
                   className="flex items-center space-x-2 p-1.5 rounded bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-855 cursor-pointer"
@@ -997,6 +1016,7 @@ export default function GraphCanvas({
             <div className="grid grid-cols-2 gap-1.5 text-[11px] font-sans">
               {[
                 { label: 'Function', color: 'bg-sky-400' },
+                { label: 'Class', color: 'bg-purple-500' },
                 { label: 'Module', color: 'bg-emerald-400' },
                 { label: 'Commit', color: 'bg-purple-400' },
                 { label: 'Engineer', color: 'bg-orange-400' }
@@ -1112,6 +1132,22 @@ export default function GraphCanvas({
               <span className="text-zinc-200 truncate font-mono">{selectedNode.file || selectedNode.path}</span>
               {selectedNode.lineno && <span className="text-zinc-500 font-bold font-mono">:{selectedNode.lineno}</span>}
               {selectedNode.loc && <span className="text-zinc-500 text-[10px] font-sans">({selectedNode.loc} loc)</span>}
+            </div>
+          )}
+
+          {/* Class Bases / Inheritance */}
+          {selectedNode.bases && (
+            <div className="text-[11px] text-zinc-300 font-sans flex items-center space-x-1.5 bg-[#000000] px-2 py-1.5 rounded border border-zinc-800">
+              <span className="text-zinc-500 font-sans">inherits:</span>
+              <span className="text-purple-300 font-mono font-medium truncate">{selectedNode.bases}</span>
+            </div>
+          )}
+
+          {/* Member of Class */}
+          {selectedNode.class_name && (
+            <div className="text-[11px] text-zinc-300 font-sans flex items-center space-x-1.5 bg-[#000000] px-2 py-1.5 rounded border border-zinc-800">
+              <span className="text-zinc-500 font-sans">class:</span>
+              <span className="text-purple-300 font-mono font-medium truncate">{selectedNode.class_name}</span>
             </div>
           )}
 

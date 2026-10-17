@@ -69,3 +69,18 @@ code, pre, .monaco-editor, .font-mono {
   background: rgba(255, 255, 255, 0.4);
 }
 
+/* High-contrast, translucent symbol line highlight for Monaco Editor */
+.monaco-editor .symbol-line-highlight {
+  background: rgba(56, 189, 248, 0.14) !important;
+  border-left: 3px solid #38bdf8 !important;
+  outline: 1px solid rgba(56, 189, 248, 0.3) !important;
+  outline-offset: -1px;
+}
+
+.monaco-editor .symbol-line-glyph {
+  background: #38bdf8 !important;
+  width: 4px !important;
+  margin-left: 2px;
+  border-radius: 2px;
+}
+

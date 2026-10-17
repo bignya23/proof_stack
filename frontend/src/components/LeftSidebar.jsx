@@ -82,13 +82,25 @@ export default function LeftSidebar({
   // Ingest form state
   const [ingestPath, setIngestPath] = useState('./sample_fintech_repo');
 
+  // Completely refresh sidebar data and reset selections whenever activeTenant changes
   useEffect(() => {
-    if (activeView === 'explorer') {
+    setSelectedCommitSha(null);
+    setCommitMessage('');
+    setSearchQuery('');
+    setRepoTree(null);
+    setCommits([]);
+    fetchTree();
+    fetchCommits();
+  }, [activeTenant]);
+
+  // Ensure view-specific data is populated when switching tabs
+  useEffect(() => {
+    if (activeView === 'explorer' && !repoTree) {
       fetchTree();
-    } else if (activeView === 'git') {
+    } else if (activeView === 'git' && commits.length === 0) {
       fetchCommits();
     }
-  }, [activeView, activeTenant]);
+  }, [activeView]);
 
   const fetchTree = async () => {
     setTreeLoading(true);
@@ -116,16 +128,21 @@ export default function LeftSidebar({
     }
   };
 
-  // Node renderer for React Arborist
+  // Node renderer for React Arborist with dropdown chevrons for folders/subfolders
   const renderTreeNode = ({ node, style, dragHandle }) => {
     const isFile = node.data.type === 'file';
     const isSelected = selectedFile?.path === node.data.path;
+    const hasChildren = !isFile && (
+      (node.data.children && node.data.children.length > 0) || 
+      node.isInternal || 
+      (node.children && node.children.length > 0)
+    );
 
     return (
       <div 
         style={style} 
         ref={dragHandle}
-        className={`flex items-center justify-between px-2 py-0.5 cursor-pointer rounded transition text-xs font-sans select-none ${
+        className={`flex items-center justify-between px-1.5 py-0.5 cursor-pointer rounded transition text-xs font-sans select-none group ${
           isSelected 
             ? "bg-zinc-900 text-blue-400 border-l-2 border-blue-500 font-semibold" 
             : "text-zinc-300 hover:bg-zinc-900/60 hover:text-white"
@@ -138,17 +155,47 @@ export default function LeftSidebar({
           }
         }}
       >
-        <div className="flex items-center space-x-1.5 truncate">
+        <div className="flex items-center space-x-1 truncate min-w-0">
+          {/* Dropdown Chevron Arrow for folders/subfolders */}
           {!isFile ? (
-            node.isOpen ? <FolderOpen size={15} strokeWidth={1.8} className="text-zinc-300 shrink-0" /> : <Folder size={15} strokeWidth={1.8} className="text-zinc-400 shrink-0" />
+            hasChildren ? (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  node.toggle();
+                }}
+                className="w-3.5 h-3.5 flex items-center justify-center text-zinc-400 hover:text-white shrink-0 cursor-pointer"
+                title={node.isOpen ? "Collapse" : "Expand"}
+              >
+                {node.isOpen ? (
+                  <ChevronDown size={12} strokeWidth={2.2} />
+                ) : (
+                  <ChevronRight size={12} strokeWidth={2.2} />
+                )}
+              </span>
+            ) : (
+              <span className="w-3.5 shrink-0" />
+            )
           ) : (
-            <FileCode size={15} strokeWidth={1.8} className="shrink-0 text-zinc-300" />
+            <span className="w-3.5 shrink-0" />
           )}
+
+          {/* Folder or File Icon */}
+          {!isFile ? (
+            node.isOpen ? (
+              <FolderOpen size={14} strokeWidth={1.8} className="text-zinc-300 shrink-0" />
+            ) : (
+              <Folder size={14} strokeWidth={1.8} className="text-zinc-400 shrink-0" />
+            )
+          ) : (
+            getFileIcon(node.data.name)
+          )}
+
           <span className="truncate">{node.data.name}</span>
         </div>
 
         {isFile && node.data.indexed && (
-          <CircleCheck size={14} strokeWidth={1.8} className="text-zinc-300 shrink-0 opacity-80" title="Indexed" />
+          <CircleCheck size={13} strokeWidth={1.8} className="text-zinc-400 shrink-0 opacity-80 group-hover:opacity-100" title="FalkorDB Indexed" />
         )}
       </div>
     );
@@ -228,8 +275,11 @@ export default function LeftSidebar({
           </div>
 
           {/* Repository Root Node */}
-          <div className="px-3 py-1.5 flex items-center justify-between text-xs font-sans text-zinc-300 font-semibold border-b border-zinc-800">
-            <span className="truncate">{activeTenant}</span>
+          <div className="px-2.5 py-1.5 flex items-center justify-between text-xs font-sans text-zinc-300 font-semibold border-b border-zinc-800 select-none">
+            <div className="flex items-center space-x-1.5 truncate">
+              <ChevronDown size={13} className="text-zinc-400 shrink-0" />
+              <span className="truncate">{activeTenant}</span>
+            </div>
             {repoTree?.stats && (
               <span className="text-[10px] text-zinc-500 font-normal font-sans">
                 {repoTree.stats.indexing_status}

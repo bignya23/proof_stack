@@ -132,11 +132,31 @@ export default function App() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestStatus, setIngestStatus] = useState("");
 
-  // Load initial graph & status
+  // Load initial graph & status, and completely refresh all state when activeTenant changes
   useEffect(() => {
     fetchTenants();
     fetchLlmStatus();
     fetchGraph(activeTenant);
+
+    // Reset all investigation, trace, and patch states for the new repository
+    setInvestigationResult(null);
+    setPatchAppliedInfo(null);
+    setStreamingTrace([]);
+    setLiveThinkingMessage("");
+    setIsStreaming(false);
+    setLoading(false);
+    setPrompt("");
+
+    // Reset graph node selection & highlights
+    setSelectedNode(null);
+    setHighlightedNodes(new Set());
+
+    // Reset editor tabs so open files from the previous repo are closed
+    setSelectedFile(null);
+    setOpenTabs([
+      { id: 'graph-tab', title: 'Knowledge Graph', type: 'graph', closable: false }
+    ]);
+    setActiveTabId('graph-tab');
   }, [activeTenant]);
 
   const fetchTenants = async () => {

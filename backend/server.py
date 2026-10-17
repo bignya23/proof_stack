@@ -445,19 +445,27 @@ def get_repository_tree(tenant_id: str):
             if row[1]:
                 indexed_modules.add(str(row[1]))
 
-        # Fetch indexed functions
-        fn_res = g.query("MATCH (fn:Function) RETURN fn.name, fn.file, fn.lineno, fn.loc, fn.qname, fn.docstring")
-        for row in fn_res.result_set:
-            fn_name, fn_file, lineno, loc, qname, doc = row[0], row[1] or "", row[2], row[3], row[4], row[5]
-            file_key = Path(fn_file).name
-            if file_key not in file_symbols_map:
-                file_symbols_map[file_key] = []
-            file_symbols_map[file_key].append({
-                "name": fn_name,
-                "kind": "function",
+        # Fetch indexed functions and classes
+        sym_res = g.query("""
+            MATCH (n)
+            WHERE n:Function OR n:Class
+            RETURN n.name, n.file, n.lineno, n.loc, n.qname, n.docstring,
+                   CASE WHEN 'Class' IN labels(n) THEN 'class' ELSE 'function' END as kind
+            ORDER BY n.lineno ASC
+        """)
+        for row in sym_res.result_set:
+            s_name, s_file, lineno, loc, qname, doc, kind = row[0], row[1] or "", row[2], row[3], row[4], row[5], row[6]
+            if not s_file or not s_name:
+                continue
+            norm_file = s_file.replace("\\", "/").strip("/")
+            if norm_file not in file_symbols_map:
+                file_symbols_map[norm_file] = []
+            file_symbols_map[norm_file].append({
+                "name": s_name,
+                "kind": kind,
                 "lineno": lineno or 1,
                 "loc": loc or 1,
-                "qname": qname or fn_name,
+                "qname": qname or s_name,
                 "docstring": (doc or "").strip()[:100],
                 "indexed": True
             })
@@ -482,11 +490,20 @@ def get_repository_tree(tenant_id: str):
             lang = _detect_language(item.name)
             language_counts[lang] = language_counts.get(lang, 0) + 1
             
-            is_indexed = (item.name in indexed_modules) or (rel_path in indexed_modules)
+            norm_rel = rel_path.replace("\\", "/").strip("/")
+            # Match by exact relative path or suffix if path prefix differs
+            symbols = file_symbols_map.get(norm_rel)
+            if symbols is None:
+                for k, v in file_symbols_map.items():
+                    if k == norm_rel or k.endswith("/" + norm_rel) or norm_rel.endswith("/" + k):
+                        symbols = v
+                        break
+            if symbols is None:
+                symbols = []
+
+            is_indexed = (item.name in indexed_modules) or (norm_rel in indexed_modules) or (len(symbols) > 0)
             if is_indexed:
                 total_indexed_files += 1
-
-            symbols = file_symbols_map.get(item.name, [])
 
             # Count lines
             line_count = 0
@@ -569,26 +586,34 @@ def get_repository_file(tenant_id: str, path: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read file: {e}")
 
-    # Query FalkorDB for symbols in this file
+    # Query FalkorDB for symbols (functions and classes) in this file
     symbols = []
     try:
         g = get_repo_graph(tenant_id)
         cypher = """
-        MATCH (fn:Function)
-        WHERE fn.file CONTAINS $filename OR fn.file = $rel_path
-        RETURN fn.name, fn.lineno, fn.loc, fn.qname, fn.docstring
-        ORDER BY fn.lineno ASC
+        MATCH (n)
+        WHERE (n:Function OR n:Class)
+          AND (n.file = $clean_path 
+               OR n.file = $rel_path
+               OR n.file ENDS WITH ('/' + $clean_path)
+               OR $clean_path ENDS WITH ('/' + n.file))
+        RETURN n.name, n.lineno, n.loc, n.qname, n.docstring,
+               CASE WHEN 'Class' IN labels(n) THEN 'class' ELSE 'function' END as kind
+        ORDER BY n.lineno ASC
         """
-        res = g.query(cypher, {"filename": target_file.name, "rel_path": clean_path})
+        rel_from_repo = str(target_file.relative_to(repo_dir)).replace("\\", "/").strip("/")
+        res = g.query(cypher, {"clean_path": clean_path, "rel_path": rel_from_repo})
         for r in res.result_set:
-            symbols.append({
-                "name": r[0],
-                "lineno": r[1] or 1,
-                "loc": r[2] or 1,
-                "qname": r[3] or r[0],
-                "docstring": r[4] or "",
-                "indexed": True
-            })
+            if r[0]:
+                symbols.append({
+                    "name": r[0],
+                    "lineno": r[1] or 1,
+                    "loc": r[2] or 1,
+                    "qname": r[3] or r[0],
+                    "docstring": r[4] or "",
+                    "kind": r[5] or "function",
+                    "indexed": True
+                })
     except Exception as e:
         print(f"[!] Cypher symbol query error: {e}")
 

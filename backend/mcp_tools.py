@@ -64,7 +64,9 @@ def mcp_ast_blast_radius(function_name: str, tenant_id: str = "sample-fintech") 
     """
     g = get_repo_graph(tenant_id)
     cypher = """
-    MATCH p = (caller:Function)-[:CALLS*1..5]->(target:Function {name: $fn_name})
+    MATCH (target)
+    WHERE (target:Function OR target:Class) AND target.name = $fn_name
+    MATCH p = (caller:Function)-[:CALLS*1..5]->(target)
     RETURN caller.qname AS impacted_qname,
            caller.name AS impacted_fn,
            caller.file AS file_path,
@@ -157,19 +159,21 @@ def mcp_find_symbol(symbol_name: str, tenant_id: str = "sample-fintech") -> dict
     """
     g = get_repo_graph(tenant_id)
     cypher = """
-    MATCH (fn:Function)
-    WHERE fn.name = $sym
-       OR fn.qname CONTAINS $sym
-       OR toLower(fn.name) CONTAINS toLower($sym)
-    RETURN fn.name        AS name,
-           fn.qname       AS qname,
-           fn.file        AS file_path,
-           fn.lineno      AS start_line,
-           fn.loc         AS loc,
-           fn.docstring   AS docstring
+    MATCH (n)
+    WHERE (n:Function OR n:Class)
+      AND (n.name = $sym
+           OR n.qname CONTAINS $sym
+           OR toLower(n.name) CONTAINS toLower($sym))
+    RETURN n.name         AS name,
+           n.qname        AS qname,
+           n.file         AS file_path,
+           n.lineno       AS start_line,
+           n.loc          AS loc,
+           n.docstring    AS docstring,
+           labels(n)[0]   AS entity_type
     ORDER BY
-      CASE WHEN fn.name = $sym THEN 0 ELSE 1 END,
-      fn.name
+      CASE WHEN n.name = $sym THEN 0 ELSE 1 END,
+      n.name
     LIMIT 5
     """
     res = g.query(cypher, {"sym": symbol_name})
@@ -178,12 +182,13 @@ def mcp_find_symbol(symbol_name: str, tenant_id: str = "sample-fintech") -> dict
     highlighted = set()
     for r in res.result_set:
         matches.append({
-            "name":       r[0],
-            "qname":      r[1],
-            "file_path":  r[2],
-            "start_line": r[3],
-            "loc":        r[4],
-            "docstring":  r[5],
+            "name":        r[0],
+            "qname":       r[1],
+            "file_path":   r[2],
+            "start_line":  r[3],
+            "loc":         r[4],
+            "docstring":   r[5],
+            "entity_type": r[6],
         })
         highlighted.add(r[0])
 
@@ -191,26 +196,29 @@ def mcp_find_symbol(symbol_name: str, tenant_id: str = "sample-fintech") -> dict
         tokens = [tok for tok in re.split(r"[_\s\-]+", symbol_name.lower()) if len(tok) >= 3]
         if tokens:
             fallback_cypher = """
-            MATCH (fn:Function)
-            WHERE ANY(t IN $tokens WHERE toLower(fn.name) CONTAINS t OR toLower(fn.file) CONTAINS t)
-            RETURN fn.name        AS name,
-                   fn.qname       AS qname,
-                   fn.file        AS file_path,
-                   fn.lineno      AS start_line,
-                   fn.loc         AS loc,
-                   fn.docstring   AS docstring
+            MATCH (n)
+            WHERE (n:Function OR n:Class)
+              AND ANY(t IN $tokens WHERE toLower(n.name) CONTAINS t OR toLower(n.file) CONTAINS t)
+            RETURN n.name         AS name,
+                   n.qname        AS qname,
+                   n.file         AS file_path,
+                   n.lineno       AS start_line,
+                   n.loc          AS loc,
+                   n.docstring    AS docstring,
+                   labels(n)[0]   AS entity_type
             LIMIT 5
             """
             try:
                 fallback_res = g.query(fallback_cypher, {"tokens": tokens})
                 for r in fallback_res.result_set:
                     matches.append({
-                        "name":       r[0],
-                        "qname":      r[1],
-                        "file_path":  r[2],
-                        "start_line": r[3],
-                        "loc":        r[4],
-                        "docstring":  r[5],
+                        "name":        r[0],
+                        "qname":       r[1],
+                        "file_path":   r[2],
+                        "start_line":  r[3],
+                        "loc":         r[4],
+                        "docstring":   r[5],
+                        "entity_type": r[6],
                     })
                     highlighted.add(r[0])
             except Exception:
@@ -244,7 +252,9 @@ def mcp_shortest_execution_path(
     """
     g = get_repo_graph(tenant_id)
     cypher = """
-    MATCH (src:Function {name: $src_name}), (tgt:Function {name: $tgt_name})
+    MATCH (src), (tgt)
+    WHERE (src:Function OR src:Class) AND src.name = $src_name
+      AND (tgt:Function OR tgt:Class) AND tgt.name = $tgt_name
     WITH src, tgt,
          shortestPath((src)-[:CALLS*1..10]->(tgt)) AS p
     WHERE p IS NOT NULL
@@ -337,7 +347,8 @@ def mcp_company_brain_provenance(function_name: str, tenant_id: str = "sample-fi
     """
     g = get_repo_graph(tenant_id)
     cypher = """
-    MATCH (m:Module)-[:DEFINES]->(fn:Function {name: $fn_name})
+    MATCH (m:Module)-[:DEFINES*1..2]->(target)
+    WHERE (target:Function OR target:Class) AND target.name = $fn_name
     MATCH (e:Engineer)-[:AUTHORED]->(c:Commit)-[:MODIFIED]->(m)
     RETURN e.name AS engineer_name,
            e.email AS engineer_email,

@@ -54,8 +54,16 @@ export default function RepoExplorer({
     }
   };
 
+  const clearHighlight = () => {
+    setHighlightLine(null);
+    if (editorRef.current) {
+      decorationsRef.current = editorRef.current.deltaDecorations(decorationsRef.current, []);
+    }
+  };
+
   const handleSelectFile = async (fileNode, targetLine = null) => {
     if (!fileNode || fileNode.type === 'directory') return;
+    clearHighlight();
     setSelectedFile(fileNode);
     setFileLoading(true);
     setHighlightLine(targetLine);
@@ -75,27 +83,32 @@ export default function RepoExplorer({
   const handleEditorMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+
+    // Remove highlighting if user clicks anywhere in the file editor
+    editor.onMouseDown(() => {
+      clearHighlight();
+    });
+
     if (highlightLine) {
       scrollToLine(highlightLine);
     }
   };
 
   const scrollToLine = (lineNum) => {
-    if (!editorRef.current || !monacoRef.current) return;
+    if (!editorRef.current || !monacoRef.current || !lineNum) return;
     const editor = editorRef.current;
     const monaco = monacoRef.current;
 
     editor.revealLineInCenter(lineNum);
     editor.setPosition({ lineNumber: lineNum, column: 1 });
 
-    // Apply gold glowing line highlight
     decorationsRef.current = editor.deltaDecorations(decorationsRef.current, [
       {
         range: new monaco.Range(lineNum, 1, lineNum, 1),
         options: {
           isWholeLine: true,
-          className: 'bg-amber-500/20 border-l-4 border-amber-400',
-          glyphMarginClassName: 'bg-amber-400'
+          className: 'symbol-line-highlight',
+          glyphMarginClassName: 'symbol-line-glyph'
         }
       }
     ]);
@@ -166,7 +179,7 @@ export default function RepoExplorer({
             )}
             {hasSymbols && (
               <span className="text-[9px] px-1 rounded bg-zinc-900 text-zinc-400 border border-zinc-800 font-mono">
-                {node.data.symbols.length} fns
+                {node.data.symbols.length} {node.data.symbols.length === 1 ? 'sym' : 'syms'}
               </span>
             )}
           </div>
@@ -350,12 +363,12 @@ export default function RepoExplorer({
           )}
 
           {/* Quick Symbol Navigator Chips */}
-          {selectedFile?.symbols && selectedFile.symbols.length > 0 && (
+          {((fileContentData?.symbols && fileContentData.symbols.length > 0) || (selectedFile?.symbols && selectedFile.symbols.length > 0)) && (
             <div className="px-3 py-1.5 border-b border-zinc-800 bg-[#000000] flex items-center space-x-1.5 overflow-x-auto text-[10px] font-mono">
               <span className="text-zinc-500 shrink-0">Symbols:</span>
-              {selectedFile.symbols.map(sym => (
+              {(fileContentData?.symbols || selectedFile?.symbols || []).map(sym => (
                 <button
-                  key={sym.name}
+                  key={sym.qname || `${sym.name}:${sym.lineno}`}
                   onClick={() => handleSymbolClick(sym, selectedFile)}
                   className={`px-2 py-0.5 rounded border transition shrink-0 flex items-center space-x-1 text-blue-400 ${
                     highlightLine === sym.lineno
@@ -363,7 +376,7 @@ export default function RepoExplorer({
                       : "bg-zinc-900 border-zinc-800 hover:border-blue-500/50"
                   }`}
                 >
-                  <span className="font-bold text-blue-400">fn</span>
+                  <span className="font-bold text-blue-400">{sym.kind === 'class' ? 'cls' : 'fn'}</span>
                   <span>{sym.name}</span>
                   <span className="text-zinc-500">:{sym.lineno}</span>
                 </button>
@@ -410,8 +423,8 @@ export default function RepoExplorer({
                   fontFamily: "'JetBrains Mono', monospace",
                   lineNumbers: "on",
                   scrollBeyondLastLine: false,
-                  renderLineHighlight: "all",
-                  glyphMargin: false,
+                  renderLineHighlight: "line",
+                  glyphMargin: true,
                   folding: true,
                 }}
               />
