@@ -442,6 +442,110 @@ def _build_deterministic_evidence(step_results: list) -> list:
     return registry
 
 
+def enhance_investigation_query(prompt: str, tenant_id: str = "sample-fintech") -> dict:
+    """
+    [Step 1: Query Enhancement & Code Symbol Grounding]
+    Transforms the user's natural language request into a code-aware investigation plan:
+    1. Expands domain terminology and technical synonyms (e.g., 'Gmail send' -> email, smtp, mail, send_alert_email).
+    2. Executes scored fuzzy matching against FalkorDB Function nodes to find candidate targets and entrypoints.
+    3. Produces an enriched prompt with grounded symbol references for the ReAct loop.
+    """
+    p_lower = prompt.lower()
+
+    domain_synonyms = {
+        "gmail": ["gmail", "mail", "email", "smtp"],
+        "email": ["email", "mail", "smtp", "sendmail"],
+        "send": ["send", "alert", "dispatch", "deliver", "notify", "post"],
+        "checkout": ["checkout", "order", "cart", "purchase", "payment"],
+        "payment": ["payment", "charge", "card", "transaction", "token", "authorize"],
+        "vault": ["vault", "hsm", "decrypt", "key", "secret"],
+        "token": ["token", "decrypt", "card_token", "pci"],
+        "timeout": ["timeout", "deadline", "delay", "retry", "backoff", "grpc"],
+        "failures": ["error", "exception", "fail", "failure", "crash", "500", "504"],
+        "auth": ["auth", "login", "signup", "user", "authenticate", "session", "jwt"],
+    }
+
+    words = [w for w in re.findall(r"\b[a-zA-Z0-9_]{3,}\b", p_lower) if w not in {
+        "the", "and", "for", "with", "are", "causes", "causing", "http", "error", "errors", "why", "what", "how", "from", "into", "over", "under", "fail", "fails"
+    }]
+
+    expanded_terms = set(words)
+    for w in words:
+        for k, syns in domain_synonyms.items():
+            if k in w or w in k:
+                expanded_terms.update(syns)
+
+    candidate_targets = []
+    candidate_entrypoints = []
+
+    try:
+        g = get_repo_graph(tenant_id)
+        res = g.query("MATCH (fn:Function) RETURN fn.name, fn.file, fn.qname")
+        scored_fns = []
+        for r in res.result_set:
+            fn_name = (r[0] or "").lower()
+            fn_file = (r[1] or "").lower()
+            qname = (r[2] or "").lower()
+            score = 0
+            matched_terms = []
+            for term in expanded_terms:
+                if term in fn_name:
+                    score += 3
+                    matched_terms.append(term)
+                elif term in fn_file:
+                    score += 1
+                    matched_terms.append(term)
+
+            if score > 0:
+                scored_fns.append({
+                    "score": score,
+                    "name": r[0],
+                    "file": r[1],
+                    "qname": r[2],
+                    "matched": matched_terms,
+                    "is_view_or_endpoint": any(v in fn_file or v in fn_name for v in ["view", "endpoint", "router", "api", "controller", "handler"])
+                })
+
+        scored_fns.sort(key=lambda x: x["score"], reverse=True)
+
+        for item in scored_fns:
+            if item["is_view_or_endpoint"] and not candidate_entrypoints:
+                candidate_entrypoints.append(item)
+            elif not candidate_targets:
+                candidate_targets.append(item)
+            if len(candidate_targets) >= 3 and candidate_entrypoints:
+                break
+    except Exception as e:
+        print(f"[!] Error in enhance_investigation_query: {e}")
+
+    best_target = candidate_targets[0]["name"] if candidate_targets else None
+    best_file = candidate_targets[0]["file"] if candidate_targets else None
+    best_entrypoint = candidate_entrypoints[0]["name"] if candidate_entrypoints else None
+
+    # Fallback for sample-fintech if none matched
+    if tenant_id == "sample-fintech" and not best_target:
+        best_target = "decrypt_card_token"
+        best_file = "vault_client.py"
+        best_entrypoint = "post_checkout_endpoint"
+
+    enhanced_summary = (
+        f"Anchored symbols: Target '{best_target}' ({best_file or 'unknown'})"
+        + (f", Entrypoint '{best_entrypoint}'" if best_entrypoint else "")
+        if best_target else "No exact graph symbols anchored."
+    )
+
+    return {
+        "original_prompt": prompt,
+        "expanded_terms": list(expanded_terms),
+        "candidate_targets": candidate_targets,
+        "candidate_entrypoints": candidate_entrypoints,
+        "best_target": best_target,
+        "best_file": best_file,
+        "best_entrypoint": best_entrypoint,
+        "enhanced_summary": enhanced_summary,
+    }
+
+
 def analyze_query_intent(prompt: str, tenant_id: str = "sample-fintech") -> dict:
     """
     Classifies user prompt into adaptive Code Agent and Graph Investigation categories.
@@ -493,23 +597,15 @@ def analyze_query_intent(prompt: str, tenant_id: str = "sample-fintech") -> dict
             target_file = "ledger_db.py"
         elif tenant_id == "sample-fintech":
             target_file = "vault_client.py"
-        else:
-            target_file = None
-
-    # Dynamic symbol match from active FalkorDB graph for non-fintech / custom repositories
-    if tenant_id != "sample-fintech" and not target_fn:
-        try:
-            g = get_repo_graph(tenant_id)
-            clean_tokens = [w for w in re.findall(r"\b[a-zA-Z0-9_]{3,}\b", p_lower) if w not in {"the", "and", "for", "with", "are", "causes", "causing", "http", "error", "errors", "why", "what", "how", "from", "into", "over", "under", "fail", "fails", "failure", "failures"}]
-            if clean_tokens:
-                res = g.query("MATCH (fn:Function) WHERE ANY(w IN $words WHERE toLower(fn.name) CONTAINS w OR toLower(fn.file) CONTAINS w) RETURN fn.name, fn.file LIMIT 1", {"words": clean_tokens})
-                if res.result_set:
-                    target_fn = res.result_set[0][0]
-                    target_file = res.result_set[0][1]
-        except Exception as err:
-            print(f"[!] Dynamic intent symbol match error: {err}")
-
-    entrypoint_fn = "post_checkout_endpoint" if tenant_id == "sample-fintech" else None
+    entrypoint_fn = None
+    # Use enhance_investigation_query to anchor symbols from active FalkorDB graph
+    enh = enhance_investigation_query(prompt, tenant_id)
+    if not target_fn:
+        target_fn = enh["best_target"]
+    if not target_file:
+        target_file = enh["best_file"]
+    if not entrypoint_fn:
+        entrypoint_fn = enh["best_entrypoint"]
 
     is_triage = any(w in p_lower for w in ["504", "timeout", "incident", "failing", "flash-sale", "triage", "propose an actionable code patch", "remediate", "fix"])
     is_blast = any(w in p_lower for w in ["blast radius", "pagerank", "systemic risk", "upstream", "rotates its key", "hotspot", "callers", "who calls", "impact", "rank"])
@@ -1698,13 +1794,24 @@ def stream_agent_investigation(
         "message": f"Starting live ReAct investigation ({model or 'Autonomous Reasoner'} on {engine_type})...",
     }
 
+    enh = enhance_investigation_query(prompt, tenant_id)
+    if enh.get("enhanced_summary"):
+        yield {
+            "type": "turn_thinking",
+            "turn": 1,
+            "message": f"Step 1 (Query Enhancement): {enh['enhanced_summary']}",
+        }
+
     if not client:
         yield from _stream_deterministic_reasoner(prompt, tenant_id, target_fn, entrypoint)
         return
 
     try:
         system_prompt = load_system_prompt()
-        user_content_parts = [f"Repository tenant: {tenant_id}"]
+        user_content_parts = [
+            f"Repository tenant: {tenant_id}",
+            f"Query Enhancement & Graph Anchoring: {enh['enhanced_summary']}",
+        ]
         if target_fn:
             user_content_parts.append(f"Target function context: {target_fn}")
         if entrypoint:
