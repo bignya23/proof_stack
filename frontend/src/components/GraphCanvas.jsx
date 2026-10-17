@@ -321,24 +321,23 @@ export default function GraphCanvas({
   }, [selectedNode, graphData.links]);
 
   return (
-    <div className="flex-1 relative bg-slate-950 flex flex-col h-full overflow-hidden select-none">
+    <div className="flex-1 relative bg-[#000000] flex flex-col h-full overflow-hidden select-none">
       
       {/* Top Floating Namespace & Stats Badge */}
-      <div className="absolute top-4 left-4 z-10 flex items-center space-x-3 bg-slate-900/90 backdrop-blur-md border border-slate-800 px-3.5 py-2 rounded-xl shadow-2xl">
-        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
-        <span className="text-xs font-mono text-slate-300">
-          FalkorDB Namespace: <strong className="text-white">repo:{activeTenant}</strong>
+      <div className="absolute top-4 left-4 z-10 flex items-center space-x-3 bg-zinc-950/90 backdrop-blur-md border border-zinc-800 px-3.5 py-2 rounded-xl shadow-2xl">
+        <div className="w-2.5 h-2.5 rounded-full bg-blue-400"></div>
+        <span className="text-xs font-mono text-zinc-300">
+          Namespace: <strong className="text-zinc-100">repo:{activeTenant}</strong>
         </span>
-        <span className="text-xs text-slate-600">|</span>
-        <span className="text-xs text-slate-400 font-mono">
+        <span className="text-xs text-zinc-700">|</span>
+        <span className="text-xs text-zinc-400 font-mono">
           {graphData.nodes.length} Nodes, {graphData.links.length} Edges
         </span>
         {(highlightedNodes.size > 0 || pathNodeNames.size > 0) && (
           <>
-            <span className="text-xs text-slate-600">|</span>
-            <span className="text-xs font-mono text-amber-300 flex items-center space-x-1">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-              <span>{Math.max(highlightedNodes.size, pathNodeNames.size)} Hops in Investigated Path</span>
+            <span className="text-xs text-zinc-700">|</span>
+            <span className="text-xs font-mono text-blue-400 flex items-center space-x-1">
+              <span>{Math.max(highlightedNodes.size, pathNodeNames.size)} Hops in Path</span>
             </span>
           </>
         )}
@@ -352,223 +351,203 @@ export default function GraphCanvas({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Find function/module..."
-            className="bg-slate-900/90 backdrop-blur border border-slate-800 text-xs rounded-lg pl-8 pr-7 py-1.5 text-slate-200 outline-none focus:border-amber-500 font-mono w-44"
+            className="bg-zinc-900 border border-zinc-800 text-xs rounded-lg pl-8 pr-7 py-1.5 text-zinc-200 outline-none focus:border-blue-500 font-mono w-44"
           />
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+          <Search size={16} strokeWidth={1.8} className="text-zinc-500 absolute left-2.5 top-2" />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-2 top-2 text-slate-400 hover:text-white"
+              className="absolute right-2 top-2 text-zinc-400 hover:text-blue-400"
             >
-              <X className="w-3.5 h-3.5" />
+              <X size={14} strokeWidth={1.8} />
             </button>
           )}
         </form>
 
-        <div className="flex items-center space-x-1 bg-slate-900/90 backdrop-blur border border-slate-800 p-1 rounded-lg">
+        <div className="flex items-center space-x-1 bg-zinc-900 border border-zinc-800 p-1 rounded-lg">
           <button
             onClick={handleZoomIn}
-            className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded transition"
+            className="p-1 hover:bg-zinc-850 text-blue-400 hover:text-blue-300 rounded transition"
             title="Zoom In"
           >
-            <ZoomIn className="w-4 h-4" />
+            <ZoomIn size={16} strokeWidth={1.8} />
           </button>
           <button
             onClick={handleZoomOut}
-            className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded transition"
+            className="p-1 hover:bg-zinc-850 text-blue-400 hover:text-blue-300 rounded transition"
             title="Zoom Out"
           >
-            <ZoomOut className="w-4 h-4" />
+            <ZoomOut size={16} strokeWidth={1.8} />
           </button>
           <button
             onClick={handleFitView}
-            className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded transition"
+            className="p-1 hover:bg-zinc-850 text-blue-400 hover:text-blue-300 rounded transition"
             title="Fit to Screen"
           >
-            <Maximize2 className="w-4 h-4" />
+            <Maximize2 size={16} strokeWidth={1.8} />
           </button>
         </div>
       </div>
 
       {/* ================= NODE INSPECTOR MODAL PANEL ================= */}
       {selectedNode && (
-        <div className="absolute top-16 right-4 z-20 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 p-4 rounded-xl shadow-2xl max-w-sm w-88 space-y-3 text-xs animate-in fade-in duration-200">
+        <div className="absolute top-16 right-4 z-20 bg-zinc-950/95 backdrop-blur-md border border-zinc-800 p-4 rounded-xl shadow-2xl max-w-sm w-88 space-y-3 text-xs animate-in fade-in duration-200">
           
           {/* Header */}
-          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+          <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
             <div className="flex items-center space-x-2">
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                selectedNode.label === 'Function' ? 'bg-sky-950 text-sky-400 border border-sky-800/40' :
-                selectedNode.label === 'Module' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/40' :
-                selectedNode.label === 'Engineer' ? 'bg-amber-950 text-amber-400 border border-amber-800/40' :
-                selectedNode.label === 'Commit' ? 'bg-purple-950 text-purple-400 border border-purple-800/40' :
-                selectedNode.label === 'Finding' ? 'bg-pink-950 text-pink-400 border border-pink-800/40' :
-                'bg-slate-800 text-slate-300'
-              }`}>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-zinc-900 text-zinc-300 border border-zinc-800">
                 {selectedNode.label}
               </span>
-              <span className="text-[10px] text-slate-400 font-mono">Node Inspector</span>
+              <span className="text-[10px] text-zinc-500 font-mono">Inspector</span>
             </div>
             <button 
               onClick={() => setSelectedNode(null)} 
-              className="text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800"
+              className="text-zinc-500 hover:text-blue-400 p-0.5 rounded hover:bg-zinc-900"
             >
-              <X className="w-4 h-4" />
+              <X size={14} strokeWidth={1.8} />
             </button>
           </div>
 
           {/* Symbol Title */}
           <div>
-            <div className="font-bold text-white text-sm font-mono break-all">
+            <div className="font-bold text-zinc-100 text-sm font-mono break-all">
               {getCleanNodeName(selectedNode)}
             </div>
             {selectedNode.qname && (
-              <div className="text-[10px] text-slate-400 font-mono truncate mt-0.5">
+              <div className="text-[10px] text-zinc-500 font-mono truncate mt-0.5">
                 {selectedNode.qname}
               </div>
             )}
           </div>
 
-          {/* Hidden FalkorDB UUID & Internal ID (Only visible in Inspector!) */}
-          <div className="bg-slate-950/80 p-2.5 rounded-lg border border-slate-800/80 space-y-1.5 font-mono text-[11px]">
+          {/* Internal Node ID */}
+          <div className="bg-[#000000] p-2.5 rounded-lg border border-zinc-800 space-y-1.5 font-mono text-[11px]">
             <div className="flex items-center justify-between">
-              <span className="text-slate-500 text-[10px] uppercase font-bold">FalkorDB Internal Node ID</span>
+              <span className="text-zinc-500 text-[10px] uppercase font-bold">Node ID</span>
               <button
                 onClick={() => handleCopyNodeId(selectedNode.id)}
-                className="text-[10px] text-slate-400 hover:text-amber-400 flex items-center space-x-1"
+                className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center space-x-1"
                 title="Copy ID"
               >
-                {copiedId ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                {copiedId ? <Check size={14} strokeWidth={1.8} className="text-blue-400" /> : <Copy size={14} strokeWidth={1.8} className="text-blue-400" />}
                 <span>{copiedId ? "Copied" : "Copy"}</span>
               </button>
             </div>
-            <div className="text-amber-300 font-bold break-all">#{selectedNode.id}</div>
+            <div className="text-zinc-300 font-bold break-all">#{selectedNode.id}</div>
             {selectedNode.sha && (
-              <div className="text-[10px] text-purple-300 pt-1 border-t border-slate-900">
-                Commit SHA: <span className="font-bold">{selectedNode.sha}</span>
+              <div className="text-[10px] text-zinc-400 pt-1 border-t border-zinc-900">
+                Commit: <span className="font-bold text-zinc-200">{selectedNode.sha}</span>
               </div>
             )}
           </div>
 
           {/* File location */}
           {(selectedNode.file || selectedNode.path) && (
-            <div className="text-[11px] text-slate-300 font-mono flex items-center space-x-1.5 bg-slate-950/50 px-2 py-1.5 rounded border border-slate-800">
-              <span className="text-slate-500">path:</span>
-              <span className="text-emerald-400 truncate">{selectedNode.file || selectedNode.path}</span>
-              {selectedNode.lineno && <span className="text-slate-500 font-bold">:{selectedNode.lineno}</span>}
-              {selectedNode.loc && <span className="text-slate-500 text-[10px]">({selectedNode.loc} loc)</span>}
+            <div className="text-[11px] text-zinc-300 font-mono flex items-center space-x-1.5 bg-[#000000] px-2 py-1.5 rounded border border-zinc-800">
+              <span className="text-zinc-500">path:</span>
+              <span className="text-zinc-200 truncate">{selectedNode.file || selectedNode.path}</span>
+              {selectedNode.lineno && <span className="text-zinc-500 font-bold">:{selectedNode.lineno}</span>}
+              {selectedNode.loc && <span className="text-zinc-500 text-[10px]">({selectedNode.loc} loc)</span>}
             </div>
           )}
 
-          {/* Message / Decision Tag / Finding Summary */}
+          {/* Message / Summary */}
           {selectedNode.decision_tag && (
-            <div className="text-[11px] text-amber-300 font-mono font-semibold bg-amber-950/40 p-2 rounded border border-amber-800/40 flex items-center space-x-1.5">
-              <Shield className="w-3.5 h-3.5 text-amber-400" />
-              <span>Architectural Decision: {selectedNode.decision_tag}</span>
+            <div className="text-[11px] text-zinc-200 font-mono font-semibold bg-zinc-900 p-2 rounded border border-zinc-800 flex items-center space-x-1.5">
+              <Shield size={14} strokeWidth={1.8} className="text-blue-400" />
+              <span>Decision: {selectedNode.decision_tag}</span>
             </div>
           )}
           {selectedNode.message && (
-            <div className="text-[11px] text-slate-300 bg-slate-950 p-2 rounded border border-slate-800 leading-relaxed font-sans">
+            <div className="text-[11px] text-zinc-300 bg-[#000000] p-2 rounded border border-zinc-800 leading-relaxed font-sans">
               {selectedNode.message}
             </div>
           )}
           {selectedNode.summary && (
-            <div className="text-[11px] text-pink-300 bg-pink-950/20 p-2 rounded border border-pink-800/40 leading-relaxed font-sans">
-              <strong className="block text-[10px] uppercase text-pink-400">Incident Memory:</strong>
+            <div className="text-[11px] text-zinc-300 bg-[#000000] p-2 rounded border border-zinc-800 leading-relaxed font-sans">
+              <strong className="block text-[10px] uppercase text-zinc-400">Incident Memory:</strong>
               {selectedNode.summary}
             </div>
           )}
           {selectedNode.remediation && (
-            <div className="text-[11px] text-emerald-300 bg-emerald-950/20 p-2 rounded border border-emerald-800/40 leading-relaxed font-sans">
-              <strong className="block text-[10px] uppercase text-emerald-400">Actionable Remediation:</strong>
+            <div className="text-[11px] text-zinc-300 bg-[#000000] p-2 rounded border border-zinc-800 leading-relaxed font-sans">
+              <strong className="block text-[10px] uppercase text-zinc-400">Remediation:</strong>
               {selectedNode.remediation}
-            </div>
-          )}
-          {selectedNode.email && (
-            <div className="text-[11px] text-slate-400 font-mono">
-              Email: <span className="text-slate-200">{selectedNode.email}</span>
             </div>
           )}
 
           {/* Connected Graph Relationships */}
-          <div className="space-y-1 pt-1 border-t border-slate-800 text-[10px] font-mono">
-            <span className="text-slate-500 uppercase font-bold">Connected Real Relationships</span>
+          <div className="space-y-1 pt-1 border-t border-zinc-800 text-[10px] font-mono">
+            <span className="text-zinc-500 uppercase font-bold">Connected Relationships</span>
             <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
               {connectedNeighbors.incoming.map((rel, idx) => (
-                <div key={idx} className="flex items-center space-x-1 text-slate-400">
-                  <ArrowRight className="w-2.5 h-2.5 text-sky-400 rotate-180" />
-                  <span className="text-sky-300 font-bold">{rel.type}</span>
-                  <span className="text-slate-500">from</span>
-                  <span className="text-slate-200 truncate">{rel.from}</span>
-                  {rel.line && <span className="text-slate-500">:{rel.line}</span>}
+                <div key={idx} className="flex items-center space-x-1 text-zinc-400">
+                  <ArrowRight size={14} strokeWidth={1.8} className="text-blue-400 rotate-180" />
+                  <span className="text-zinc-200 font-bold">{rel.type}</span>
+                  <span className="text-zinc-500">from</span>
+                  <span className="text-zinc-300 truncate">{rel.from}</span>
+                  {rel.line && <span className="text-zinc-500">:{rel.line}</span>}
                 </div>
               ))}
               {connectedNeighbors.outgoing.map((rel, idx) => (
-                <div key={idx} className="flex items-center space-x-1 text-slate-400">
-                  <ArrowRight className="w-2.5 h-2.5 text-amber-400" />
-                  <span className="text-amber-300 font-bold">{rel.type}</span>
-                  <span className="text-slate-500">to</span>
-                  <span className="text-slate-200 truncate">{rel.to}</span>
-                  {rel.line && <span className="text-slate-500">:{rel.line}</span>}
+                <div key={idx} className="flex items-center space-x-1 text-zinc-400">
+                  <ArrowRight size={14} strokeWidth={1.8} className="text-blue-400" />
+                  <span className="text-zinc-200 font-bold">{rel.type}</span>
+                  <span className="text-zinc-500">to</span>
+                  <span className="text-zinc-300 truncate">{rel.to}</span>
+                  {rel.line && <span className="text-zinc-500">:{rel.line}</span>}
                 </div>
               ))}
               {connectedNeighbors.incoming.length === 0 && connectedNeighbors.outgoing.length === 0 && (
-                <div className="text-slate-500 italic">No direct edges loaded</div>
+                <div className="text-zinc-500 italic">No direct edges loaded</div>
               )}
             </div>
           </div>
 
-          {/* Action button */}
+          {/* Action button (Button text strictly in blue) */}
           <button
             onClick={() => handleCenterNode(selectedNode)}
-            className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white rounded text-xs font-medium flex items-center justify-center space-x-1.5 transition"
+            className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded text-xs font-mono font-medium flex items-center justify-center space-x-1.5 transition"
           >
-            <Compass className="w-3.5 h-3.5" />
+            <Compass size={16} strokeWidth={1.8} className="text-blue-400" />
             <span>Center Node in View</span>
           </button>
         </div>
       )}
 
       {/* Schema & Relationship Legend */}
-      <div className="absolute bottom-4 right-4 z-10 bg-slate-900/90 backdrop-blur-md border border-slate-800 p-3 rounded-xl shadow-2xl space-y-1.5 text-[11px]">
-        <div className="font-bold text-slate-300 pb-1 border-b border-slate-800 flex items-center justify-between">
-          <span>Graph Topology Legend</span>
-          <span className="text-[10px] text-slate-500 font-mono">FalkorDB</span>
+      <div className="absolute bottom-4 right-4 z-10 bg-zinc-950/90 backdrop-blur-md border border-zinc-800 p-3 rounded-xl shadow-2xl space-y-1.5 text-[11px]">
+        <div className="font-bold text-zinc-300 pb-1 border-b border-zinc-800 flex items-center justify-between">
+          <span>Topology Legend</span>
+          <span className="text-[10px] text-zinc-500 font-mono">FalkorDB</span>
         </div>
         
         {/* Node types */}
         <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
           <div className="flex items-center space-x-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
-            <span className="text-slate-300">Function (AST)</span>
+            <span className="text-zinc-300">Function (AST)</span>
           </div>
           <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-            <span className="text-slate-300">Module (File)</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+            <span className="text-zinc-300">Module (File)</span>
           </div>
           <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-            <span className="text-slate-300">Engineer</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-zinc-400"></span>
+            <span className="text-zinc-300">Engineer</span>
           </div>
           <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
-            <span className="text-slate-300">Commit (ADR)</span>
-          </div>
-          <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-pink-500"></span>
-            <span className="text-slate-300">Finding (Memory)</span>
-          </div>
-          <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
-            <span className="text-slate-300">Session</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-zinc-500"></span>
+            <span className="text-zinc-300">Commit</span>
           </div>
         </div>
 
-        {/* Investigated Path Gold Highlight Legend */}
-        <div className="pt-1.5 border-t border-slate-800 flex items-center space-x-2 text-[10px]">
-          <span className="w-3 h-1.5 rounded-full bg-amber-400 shadow-sm shadow-amber-400"></span>
-          <span className="text-amber-300 font-semibold">Investigated Path (Gold Glow)</span>
+        {/* Investigated Path Highlight Legend */}
+        <div className="pt-1.5 border-t border-zinc-800 flex items-center space-x-2 text-[10px]">
+          <span className="w-3 h-1.5 rounded-full bg-amber-400"></span>
+          <span className="text-amber-400 font-semibold">Investigated Path (Gold)</span>
         </div>
       </div>
 

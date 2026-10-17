@@ -2,9 +2,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { 
-  Network, FileCode, ShieldCheck, X, ChevronUp, 
-  ChevronDown, Terminal, RefreshCw, CheckCircle2, 
-  GitCommit, ArrowRight, ExternalLink
+  Network, FileCode, Database, X, ChevronUp, 
+  ChevronDown, Terminal, RefreshCw, CircleCheck 
 } from 'lucide-react';
 
 import GraphCanvas from './GraphCanvas';
@@ -93,8 +92,8 @@ export default function CentralWorkspace({
         range: new monaco.Range(lineNum, 1, lineNum, 1),
         options: {
           isWholeLine: true,
-          className: 'bg-amber-500/25 border-l-4 border-amber-400',
-          glyphMarginClassName: 'bg-amber-400'
+          className: 'bg-blue-500/20 border-l-4 border-blue-400',
+          glyphMarginClassName: 'bg-blue-400'
         }
       }
     ]);
@@ -123,9 +122,9 @@ export default function CentralWorkspace({
                   : "bg-[#09090b] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40"
               }`}
             >
-              {tab.type === 'graph' && <Network className="w-3.5 h-3.5 text-blue-400" />}
-              {tab.type === 'file' && <FileCode className="w-3.5 h-3.5 text-blue-400" />}
-              {tab.type === 'evidence' && <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />}
+              {tab.type === 'graph' && <Network size={16} strokeWidth={1.8} className="text-blue-400" />}
+              {tab.type === 'file' && <FileCode size={16} strokeWidth={1.8} className="text-blue-400" />}
+              {tab.type === 'evidence' && <Database size={16} strokeWidth={1.8} className="text-blue-400" />}
               
               <span className="truncate max-w-[140px]">{tab.title}</span>
 
@@ -137,7 +136,7 @@ export default function CentralWorkspace({
                   }}
                   className="p-0.5 rounded hover:bg-zinc-800 text-zinc-500 hover:text-blue-400"
                 >
-                  <X className="w-3 h-3" />
+                  <X size={14} strokeWidth={1.8} />
                 </button>
               )}
             </div>
@@ -194,7 +193,7 @@ export default function CentralWorkspace({
             <div className="flex-1 relative overflow-hidden">
               {fileLoading ? (
                 <div className="h-full flex items-center justify-center text-xs text-zinc-400 space-x-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+                  <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" />
                   <span>Loading source file...</span>
                 </div>
               ) : fileContent ? (
@@ -249,17 +248,17 @@ export default function CentralWorkspace({
           className="h-7 px-3 flex items-center justify-between text-xs font-mono text-zinc-400 cursor-pointer hover:bg-zinc-900/50 select-none shrink-0"
         >
           <div className="flex items-center space-x-2">
-            <Terminal className="w-3.5 h-3.5 text-blue-400" />
+            <Terminal size={16} strokeWidth={1.8} className="text-blue-400" />
             <span className="font-bold text-zinc-200">Terminal & Console</span>
             {isStreaming && (
               <span className="flex items-center space-x-1 text-blue-400">
-                <RefreshCw className="w-3 h-3 animate-spin text-blue-400" />
+                <RefreshCw size={14} strokeWidth={1.8} className="animate-spin text-blue-400" />
                 <span className="text-[10px]">Turn {liveTurn} Deliberating</span>
               </span>
             )}
             {!isStreaming && streamingTrace.length > 0 && (
               <span className="text-[10px] text-zinc-400 flex items-center space-x-1">
-                <CheckCircle2 className="w-3 h-3 text-blue-400" />
+                <CircleCheck size={14} strokeWidth={1.8} className="text-blue-400" />
                 <span>{streamingTrace.length} Steps Executed</span>
               </span>
             )}
@@ -270,9 +269,9 @@ export default function CentralWorkspace({
               {liveThinkingMessage || "Ready"}
             </span>
             {isConsoleOpen ? (
-              <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
+              <ChevronDown size={16} strokeWidth={1.8} className="text-zinc-500" />
             ) : (
-              <ChevronUp className="w-3.5 h-3.5 text-zinc-500" />
+              <ChevronUp size={16} strokeWidth={1.8} className="text-zinc-500" />
             )}
           </div>
         </div>

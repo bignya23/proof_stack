@@ -1,6 +1,6 @@
 // src/components/GitUrlPanel.jsx
 import React, { useState } from 'react';
-import { Database, GitBranch, RefreshCw, CheckCircle2, AlertCircle, FolderGit2, Layers, Cpu } from 'lucide-react';
+import { Database, GitBranch, RefreshCw, CircleCheck, AlertCircle, FolderGit2, Layers } from 'lucide-react';
 
 export default function GitUrlPanel({ 
   onIngest, 
@@ -29,62 +29,62 @@ export default function GitUrlPanel({
       
       {/* Intro Header */}
       <div className="space-y-1">
-        <h3 className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
-          <FolderGit2 className="w-4 h-4 text-sky-400" />
+        <h3 className="text-xs font-bold text-zinc-200 flex items-center space-x-1.5 font-mono">
+          <FolderGit2 size={16} strokeWidth={1.8} className="text-blue-400" />
           <span>Codebase & Knowledge Graph Ingestion</span>
         </h3>
-        <p className="text-xs text-slate-400 leading-relaxed">
+        <p className="text-xs text-zinc-400 leading-relaxed font-sans">
           Ingest any local folder path or public GitHub URL. FalkorDB parses AST function call graphs, modules, and Git commits with architectural tags.
         </p>
       </div>
 
-      {/* Preset Buttons */}
+      {/* Preset Buttons (Button text strictly in blue) */}
       <div>
-        <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Quick Presets</label>
+        <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 font-mono">Quick Presets</label>
         <div className="flex flex-wrap gap-2 mt-1.5">
           <button
             type="button"
             onClick={() => handleSelectPreset("./sample_fintech_repo", "sample-fintech")}
-            className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition flex items-center space-x-1.5"
+            className="text-[11px] px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-blue-400 hover:border-blue-500/50 hover:bg-zinc-850 transition flex items-center space-x-1.5 font-mono"
           >
-            <span>💳</span>
+            <FolderGit2 size={14} strokeWidth={1.8} className="text-blue-400" />
             <span>Sample Fintech Repo (Local)</span>
           </button>
           <button
             type="button"
             onClick={() => handleSelectPreset("https://github.com/fastapi/fastapi", "fastapi-demo")}
-            className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition flex items-center space-x-1.5"
+            className="text-[11px] px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-blue-400 hover:border-blue-500/50 hover:bg-zinc-850 transition flex items-center space-x-1.5 font-mono"
           >
-            <span>🚀</span>
+            <Database size={14} strokeWidth={1.8} className="text-blue-400" />
             <span>FastAPI GitHub Repo</span>
           </button>
         </div>
       </div>
 
       {/* Ingestion Form */}
-      <form onSubmit={handleSubmit} className="space-y-3 p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl">
+      <form onSubmit={handleSubmit} className="space-y-3 p-3.5 bg-zinc-950 border border-zinc-800 rounded-xl">
         <div>
-          <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Repository Path or Git URL</label>
+          <label className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider font-mono">Repository Path or Git URL</label>
           <input
             type="text"
             value={repoInput}
             onChange={(e) => setRepoInput(e.target.value)}
             placeholder="./sample_fintech_repo or https://github.com/..."
-            className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:border-sky-500 outline-none font-mono"
+            className="w-full mt-1 bg-[#000000] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:border-blue-500 outline-none font-mono"
             required
           />
         </div>
 
         <div>
-          <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Tenant Namespace (FalkorDB Graph Key)</label>
+          <label className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider font-mono">Tenant Namespace (FalkorDB Graph Key)</label>
           <div className="flex items-center space-x-2 mt-1">
-            <span className="text-xs font-mono text-slate-500">repo:</span>
+            <span className="text-xs font-mono text-zinc-500">repo:</span>
             <input
               type="text"
               value={tenantInput}
               onChange={(e) => setTenantInput(e.target.value)}
               placeholder="sample-fintech"
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:border-sky-500 outline-none font-mono"
+              className="flex-1 bg-[#000000] border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 focus:border-blue-500 outline-none font-mono"
               required
             />
           </div>
@@ -93,16 +93,16 @@ export default function GitUrlPanel({
         <button
           type="submit"
           disabled={isIngesting}
-          className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-sky-950/50 flex items-center justify-center space-x-2 transition disabled:opacity-50"
+          className="w-full py-2.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 text-xs font-bold rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 font-mono"
         >
           {isIngesting ? (
             <>
-              <RefreshCw className="w-4 h-4 animate-spin" />
+              <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" />
               <span>Parsing AST & Ingesting into FalkorDB...</span>
             </>
           ) : (
             <>
-              <Database className="w-4 h-4" />
+              <Database size={16} strokeWidth={1.8} className="text-blue-400" />
               <span>Ingest Repository into FalkorDB</span>
             </>
           )}
@@ -113,31 +113,31 @@ export default function GitUrlPanel({
       {ingestStatus && (
         <div className={`p-3 rounded-lg border text-xs font-mono flex items-center space-x-2 ${
           ingestStatus.toLowerCase().includes("success")
-            ? "bg-emerald-950/40 border-emerald-500/50 text-emerald-300"
+            ? "bg-zinc-950 border-zinc-800 text-emerald-400"
             : ingestStatus.toLowerCase().includes("error") || ingestStatus.toLowerCase().includes("failed")
-            ? "bg-rose-950/40 border-rose-500/50 text-rose-300"
-            : "bg-sky-950/40 border-sky-500/50 text-sky-300"
+            ? "bg-zinc-950 border-zinc-800 text-rose-400"
+            : "bg-zinc-950 border-zinc-800 text-blue-400"
         }`}>
           {ingestStatus.toLowerCase().includes("success") ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CircleCheck size={16} strokeWidth={1.8} className="text-emerald-400 shrink-0" />
           ) : (
-            <RefreshCw className="w-4 h-4 animate-spin text-sky-400 shrink-0" />
+            <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400 shrink-0" />
           )}
           <span>{ingestStatus}</span>
         </div>
       )}
 
       {/* FalkorDB Ingest Architecture Info */}
-      <div className="p-3 bg-slate-950/50 border border-slate-800 rounded-xl space-y-2 text-[11px] text-slate-400">
-        <div className="font-semibold text-slate-300 flex items-center space-x-1.5">
-          <Layers className="w-3.5 h-3.5 text-sky-400" />
+      <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2 text-[11px] text-zinc-400 font-mono">
+        <div className="font-semibold text-zinc-300 flex items-center space-x-1.5">
+          <Layers size={14} strokeWidth={1.8} className="text-blue-400" />
           <span>FalkorDB Graph Entities Ingested</span>
         </div>
-        <ul className="space-y-1 list-disc list-inside text-slate-400 pl-1 font-mono text-[10px]">
-          <li><span className="text-slate-200">(:Function)</span> nodes with parameters, lineno, and AST call paths</li>
-          <li><span className="text-slate-200">(:Module)</span> nodes mapping Python source file hierarchies</li>
-          <li><span className="text-slate-200">(:Commit)</span> nodes extracting <code className="text-amber-300">[ADR-xxx]</code> decision tags</li>
-          <li><span className="text-slate-200">(:Engineer)</span> nodes linking author ownership and blame history</li>
+        <ul className="space-y-1 list-disc list-inside text-zinc-400 pl-1 text-[10px]">
+          <li><span className="text-zinc-200">(:Function)</span> nodes with parameters, lineno, and AST call paths</li>
+          <li><span className="text-zinc-200">(:Module)</span> nodes mapping Python source file hierarchies</li>
+          <li><span className="text-zinc-200">(:Commit)</span> nodes extracting <code className="text-blue-400 font-bold">[ADR-xxx]</code> decision tags</li>
+          <li><span className="text-zinc-200">(:Engineer)</span> nodes linking author ownership and blame history</li>
         </ul>
       </div>
 

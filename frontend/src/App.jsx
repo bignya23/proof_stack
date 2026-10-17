@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 import TopNavbar from './components/TopNavbar';
 import ActivityBar from './components/ActivityBar';
@@ -173,6 +173,17 @@ export default function App() {
     setIsSidebarOpen(true);
   };
 
+  const abortControllerRef = useRef(null);
+
+  const handleStopInvestigation = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setIsStreaming(false);
+    setLoading(false);
+    setLiveThinkingMessage("Investigation paused.");
+  };
+
   // =========================================================================
   // STREAMING AGENT INVESTIGATION VIA SSE
   // =========================================================================
@@ -183,12 +194,15 @@ export default function App() {
     setLiveThinkingMessage("Initiating live ReAct agent stream...");
     setInvestigationResult(null);
     setPatchAppliedInfo(null);
-    setIsConsoleOpen(true); // Automatically open bottom console to show live turns
+    setIsConsoleOpen(true);
+
+    abortControllerRef.current = new AbortController();
 
     try {
       const response = await fetch(`${API_BASE}/api/investigate/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortControllerRef.current.signal,
         body: JSON.stringify({
           prompt: prompt,
           tenant_id: activeTenant,
@@ -225,6 +239,10 @@ export default function App() {
         }
       }
     } catch (err) {
+      if (err.name === 'AbortError') {
+        console.log("Investigation stream aborted by user.");
+        return;
+      }
       console.error("Streaming investigation failed, falling back to standard endpoint:", err);
       try {
         const fallbackRes = await fetch(`${API_BASE}/api/investigate`, {
@@ -375,7 +393,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#060911] text-slate-200">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#000000] text-zinc-200">
       
       {/* 1. TOP GLOBAL NAVBAR */}
       <TopNavbar 
@@ -456,14 +474,20 @@ export default function App() {
             prompt={prompt}
             setPrompt={setPrompt}
             onRunInvestigation={runInvestigation}
+            onStopInvestigation={handleStopInvestigation}
             isStreaming={isStreaming}
             loading={loading}
             liveThinkingMessage={liveThinkingMessage}
             liveTurn={liveTurn}
             streamingTrace={streamingTrace}
             investigationResult={investigationResult}
+            activePatch={investigationResult?.patch}
+            llmStatus={llmStatus}
             onOpenEvidenceTab={handleOpenEvidenceTab}
             onOpenCommitTab={handleOpenCommitTab}
+            onOpenTerminal={() => setIsConsoleOpen(prev => !prev)}
+            onOpenFiles={() => { setActiveActivityView('explorer'); setIsSidebarOpen(true); }}
+            onOpenGraph={() => setActiveTabId('graph-tab')}
           />
         )}
 

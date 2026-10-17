@@ -1,7 +1,7 @@
 // src/components/ActivityBar.jsx
 import React from 'react';
 import { 
-  Files, GitBranch, Network, ShieldCheck, 
+  FolderTree, GitPullRequest, Network, Database, 
   FolderGit2, Terminal, PanelLeftClose, PanelLeft
 } from 'lucide-react';
 
@@ -16,10 +16,10 @@ export default function ActivityBar({
   hasPatch = false
 }) {
   const navItems = [
-    { id: 'explorer', label: 'Explorer', icon: Files },
-    { id: 'git', label: 'Source Control', icon: GitBranch, badge: hasPatch },
+    { id: 'explorer', label: 'Explorer', icon: FolderTree },
+    { id: 'git', label: 'Source Control', icon: GitPullRequest, badge: hasPatch },
     { id: 'graph', label: 'Graph Navigator', icon: Network },
-    { id: 'evidence', label: 'Evidence Registry', icon: ShieldCheck, count: evidenceCount },
+    { id: 'evidence', label: 'Evidence Registry', icon: Database, count: evidenceCount },
     { id: 'ingest', label: 'Ingestion', icon: FolderGit2 },
   ];
 
@@ -36,7 +36,7 @@ export default function ActivityBar({
   return (
     <aside className="w-12 bg-[#09090b] border-r border-zinc-800 flex flex-col items-center justify-between py-2 select-none z-20 shrink-0">
       
-      {/* Top Activity Icons */}
+      {/* Top Activity Icons (20px, 1.8 stroke width) */}
       <div className="flex flex-col items-center space-y-1 w-full">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -58,7 +58,7 @@ export default function ActivityBar({
                 <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-blue-500 rounded-r"></div>
               )}
               
-              <Icon className="w-5 h-5 stroke-[1.7]" />
+              <Icon size={20} strokeWidth={1.8} />
 
               {/* Badge indicators */}
               {item.badge && (
@@ -74,7 +74,7 @@ export default function ActivityBar({
         })}
       </div>
 
-      {/* Bottom Controls */}
+      {/* Bottom Controls (18px, 1.8 stroke width) */}
       <div className="flex flex-col items-center space-y-1 w-full">
         {/* Toggle Terminal / Console Drawer */}
         <button
@@ -86,7 +86,7 @@ export default function ActivityBar({
           }`}
           title={isConsoleOpen ? "Hide Terminal" : "Show Terminal"}
         >
-          <Terminal className="w-4 h-4" />
+          <Terminal size={18} strokeWidth={1.8} />
         </button>
 
         {/* Toggle Sidebar Collapse */}
@@ -96,9 +96,9 @@ export default function ActivityBar({
           title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
         >
           {isSidebarOpen ? (
-            <PanelLeftClose className="w-4 h-4" />
+            <PanelLeftClose size={18} strokeWidth={1.8} />
           ) : (
-            <PanelLeft className="w-4 h-4" />
+            <PanelLeft size={18} strokeWidth={1.8} />
           )}
         </button>
       </div>

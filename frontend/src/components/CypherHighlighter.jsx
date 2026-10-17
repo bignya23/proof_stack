@@ -13,41 +13,41 @@ const KEYWORDS = new Set([
 function highlightToken(token, idx) {
   // Check strings
   if ((token.startsWith("'") && token.endsWith("'")) || (token.startsWith('"') && token.endsWith('"'))) {
-    return <span key={idx} className="text-emerald-300">{token}</span>;
+    return <span key={idx} className="text-zinc-300">{token}</span>;
   }
   // Check parameters ($param)
   if (token.startsWith('$')) {
-    return <span key={idx} className="text-amber-400 font-semibold">{token}</span>;
+    return <span key={idx} className="text-blue-400 font-semibold">{token}</span>;
   }
   // Check node labels (:Function, :Commit, etc.)
   if (token.startsWith(':') && token.length > 1) {
-    return <span key={idx} className="text-purple-400 font-medium">{token}</span>;
+    return <span key={idx} className="text-zinc-200 font-medium">{token}</span>;
   }
   // Check keywords
   const cleanWord = token.replace(/[^a-zA-Z_]/g, '');
   if (KEYWORDS.has(token) || KEYWORDS.has(cleanWord)) {
-    return <span key={idx} className="text-sky-400 font-bold">{token}</span>;
+    return <span key={idx} className="text-blue-400 font-bold">{token}</span>;
   }
   // Default token
-  return <span key={idx}>{token}</span>;
+  return <span key={idx} className="text-zinc-400">{token}</span>;
 }
 
 function highlightLine(line) {
   if (line.trim().startsWith('//')) {
-    return <span className="text-slate-500 italic">{line}</span>;
+    return <span className="text-zinc-600 italic">{line}</span>;
   }
   // Regex splitting by whitespace and special punctuation while preserving spaces
   const parts = line.split(/(\s+|[(),\[\]{}|])/);
   return parts.map((part, i) => highlightToken(part, i));
 }
 
-export default function CypherHighlighter({ cypher, title = "FalkorDB openCypher Query" }) {
+export default function CypherHighlighter({ cypher, title = "Cypher Query" }) {
   const [copied, setCopied] = useState(false);
 
   if (!cypher || !cypher.trim()) {
     return (
-      <div className="text-slate-500 text-xs italic font-mono bg-slate-950/60 p-2.5 rounded border border-slate-800">
-        // Direct FalkorDB memory accessor (no parameterized Cypher required)
+      <div className="text-zinc-600 text-xs italic font-mono bg-[#000000] p-2.5 rounded border border-zinc-800">
+        // Direct memory traversal (no cypher query required)
       </div>
     );
   }
@@ -62,29 +62,26 @@ export default function CypherHighlighter({ cypher, title = "FalkorDB openCypher
   const lines = cypher.trim().split('\n');
 
   return (
-    <div className="relative group rounded-lg overflow-hidden border border-slate-800 bg-slate-950/90 shadow-inner">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/80 border-b border-slate-800 text-[10px] text-slate-400 font-mono">
+    <div className="relative group rounded-lg overflow-hidden border border-zinc-800 bg-[#000000] shadow-inner">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-950 border-b border-zinc-800 text-[10px] text-zinc-400 font-mono">
         <div className="flex items-center space-x-1.5">
-          <Terminal className="w-3 h-3 text-sky-400" />
-          <span className="text-slate-300 font-semibold">{title}</span>
-          <span className="text-[9px] px-1 py-0.2 rounded bg-sky-950 text-sky-300 border border-sky-800/40">
-            FalkorDB
-          </span>
+          <Terminal size={14} strokeWidth={1.8} className="text-blue-400" />
+          <span className="text-zinc-300 font-semibold">{title}</span>
         </div>
         <button
           onClick={handleCopy}
-          className="flex items-center space-x-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition active:scale-95"
+          className="flex items-center space-x-1 px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500/50 text-blue-400 transition"
           title="Copy Cypher to clipboard"
         >
           {copied ? (
             <>
-              <Check className="w-2.5 h-2.5 text-emerald-400" />
-              <span className="text-emerald-400 font-bold">Copied!</span>
+              <Check size={14} strokeWidth={1.8} className="text-blue-400" />
+              <span className="font-bold">Copied!</span>
             </>
           ) : (
             <>
-              <Copy className="w-2.5 h-2.5" />
-              <span>Copy Cypher</span>
+              <Copy size={14} strokeWidth={1.8} className="text-blue-400" />
+              <span>Copy</span>
             </>
           )}
         </button>

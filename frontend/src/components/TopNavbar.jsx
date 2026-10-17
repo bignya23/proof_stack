@@ -1,8 +1,7 @@
-// src/components/TopNavbar.jsx
 import React from 'react';
 import { 
-  Network, Database, Cpu, Sparkles, PanelRight, 
-  PanelRightClose, GitBranch, RefreshCw, Layers
+  Network, Database, PanelRightOpen, 
+  PanelRightClose, RefreshCw, Sparkles 
 } from 'lucide-react';
 
 export default function TopNavbar({
@@ -22,7 +21,7 @@ export default function TopNavbar({
       <div className="flex items-center space-x-3">
         <div className="flex items-center space-x-2">
           <div className="w-6 h-6 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center text-blue-400">
-            <Network className="w-3.5 h-3.5" />
+            <Network size={16} strokeWidth={1.8} />
           </div>
           <span className="font-bold text-xs tracking-tight text-zinc-100 font-sans">
             ProofStack
@@ -33,7 +32,7 @@ export default function TopNavbar({
 
         {/* Multigraph Tenant Selector */}
         <div className="flex items-center space-x-1.5">
-          <Database className="w-3.5 h-3.5 text-zinc-500" />
+          <Database size={16} strokeWidth={1.8} className="text-zinc-500" />
           <select 
             value={activeTenant} 
             onChange={(e) => setActiveTenant(e.target.value)}
@@ -85,15 +84,15 @@ export default function TopNavbar({
           title={isRightPanelOpen ? "Close Copilot" : "Open Copilot"}
         >
           {isStreaming ? (
-            <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+            <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" />
           ) : (
-            <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+            <Sparkles size={16} strokeWidth={1.8} className="text-blue-400" />
           )}
           <span>Copilot</span>
           {isRightPanelOpen ? (
-            <PanelRightClose className="w-3.5 h-3.5 opacity-70 text-blue-400" />
+            <PanelRightClose size={16} strokeWidth={1.8} className="opacity-70 text-blue-400" />
           ) : (
-            <PanelRight className="w-3.5 h-3.5 opacity-70 text-blue-400" />
+            <PanelRightOpen size={16} strokeWidth={1.8} className="opacity-70 text-blue-400" />
           )}
         </button>
       </div>

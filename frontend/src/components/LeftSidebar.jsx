@@ -1,11 +1,8 @@
-// src/components/LeftSidebar.jsx
 import React, { useState, useEffect } from 'react';
 import { Tree } from 'react-arborist';
 import { 
   Folder, FolderOpen, FileCode, GitCommit, Search, 
-  RefreshCw, CheckCircle2, ShieldCheck, Network, 
-  ExternalLink, ChevronDown, ChevronRight, Layers, 
-  GitPullRequest, ArrowRight, FolderGit2
+  RefreshCw, CircleCheck, GitPullRequest, FolderGit2
 } from 'lucide-react';
 
 const API_BASE = "http://localhost:8000";
@@ -99,15 +96,15 @@ export default function LeftSidebar({
       >
         <div className="flex items-center space-x-1.5 truncate">
           {!isFile ? (
-            node.isOpen ? <FolderOpen className="w-3.5 h-3.5 text-zinc-400 shrink-0" /> : <Folder className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+            node.isOpen ? <FolderOpen size={15} strokeWidth={1.8} className="text-zinc-400 shrink-0" /> : <Folder size={15} strokeWidth={1.8} className="text-zinc-500 shrink-0" />
           ) : (
-            <FileCode className={`w-3.5 h-3.5 shrink-0 ${node.data.language === 'python' ? 'text-blue-400' : 'text-zinc-500'}`} />
+            <FileCode size={15} strokeWidth={1.8} className={`shrink-0 ${node.data.language === 'python' ? 'text-blue-400' : 'text-zinc-500'}`} />
           )}
           <span className="truncate">{node.data.name}</span>
         </div>
 
         {isFile && node.data.indexed && (
-          <CheckCircle2 className="w-3 h-3 text-blue-400 shrink-0 opacity-80" title="Indexed" />
+          <CircleCheck size={14} strokeWidth={1.8} className="text-blue-400 shrink-0 opacity-80" title="Indexed" />
         )}
       </div>
     );
@@ -144,7 +141,7 @@ export default function LeftSidebar({
           className="text-zinc-500 hover:text-blue-400 p-1"
           title="Refresh"
         >
-          <RefreshCw className="w-3 h-3" />
+          <RefreshCw size={14} strokeWidth={1.8} />
         </button>
       </div>
 
@@ -155,7 +152,7 @@ export default function LeftSidebar({
           {/* Search Bar */}
           <div className="p-2 border-b border-zinc-800">
             <div className="relative">
-              <Search className="w-3 h-3 text-zinc-500 absolute left-2 top-2" />
+              <Search size={14} strokeWidth={1.8} className="text-zinc-500 absolute left-2 top-2" />
               <input
                 type="text"
                 value={searchQuery}
@@ -188,7 +185,7 @@ export default function LeftSidebar({
                         selectedFile?.path === f.path ? "bg-zinc-900 text-blue-400" : "text-zinc-300 hover:bg-zinc-900/60"
                       }`}
                     >
-                      <FileCode className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <FileCode size={14} strokeWidth={1.8} className="text-blue-400 shrink-0" />
                       <span className="truncate">{f.name}</span>
                     </div>
                     {f.symbols && (
@@ -236,7 +233,7 @@ export default function LeftSidebar({
             <div className="bg-zinc-950 border border-zinc-800 p-2.5 rounded-lg space-y-2">
               <div className="flex items-center justify-between text-xs font-mono text-zinc-200 font-bold">
                 <span className="flex items-center space-x-1">
-                  <GitPullRequest className="w-3.5 h-3.5 text-blue-400" />
+                  <GitPullRequest size={16} strokeWidth={1.8} className="text-blue-400" />
                   <span>Proposed Patch</span>
                 </span>
                 <span className="w-2 h-2 rounded-full bg-blue-400"></span>
@@ -247,7 +244,7 @@ export default function LeftSidebar({
                 disabled={isApplyingPatch}
                 className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded text-xs font-mono font-bold transition flex items-center justify-center space-x-1.5 disabled:opacity-50"
               >
-                {isApplyingPatch ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" /> : <GitCommit className="w-3.5 h-3.5 text-blue-400" />}
+                {isApplyingPatch ? <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" /> : <GitCommit size={16} strokeWidth={1.8} className="text-blue-400" />}
                 <span>{isApplyingPatch ? "Committing..." : "Apply & Commit"}</span>
               </button>
               {appliedInfo && (
@@ -377,7 +374,7 @@ export default function LeftSidebar({
             disabled={isIngesting}
             className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded font-bold transition flex items-center justify-center space-x-1.5 disabled:opacity-50"
           >
-            {isIngesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" /> : <FolderGit2 className="w-3.5 h-3.5 text-blue-400" />}
+            {isIngesting ? <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" /> : <FolderGit2 size={16} strokeWidth={1.8} className="text-blue-400" />}
             <span>{isIngesting ? "Ingesting..." : "Ingest Repository"}</span>
           </button>
           {ingestStatus && (

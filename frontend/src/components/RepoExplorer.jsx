@@ -4,7 +4,7 @@ import { Tree } from 'react-arborist';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { 
   Folder, FolderOpen, FileCode, Search, GitCommit, 
-  CheckCircle2, RefreshCw, Layers, Terminal, Sparkles, 
+  CircleCheck, RefreshCw, Layers, Terminal, Sparkles, 
   ExternalLink, ChevronRight, ChevronDown, Compass, 
   Code2, Eye, GitPullRequest, ArrowRight
 } from 'lucide-react';
@@ -88,13 +88,13 @@ export default function RepoExplorer({
     editor.revealLineInCenter(lineNum);
     editor.setPosition({ lineNumber: lineNum, column: 1 });
 
-    // Apply glowing line highlight
+    // Apply gold glowing line highlight
     decorationsRef.current = editor.deltaDecorations(decorationsRef.current, [
       {
         range: new monaco.Range(lineNum, 1, lineNum, 1),
         options: {
           isWholeLine: true,
-          className: 'bg-amber-500/25 border-l-4 border-amber-400',
+          className: 'bg-amber-500/20 border-l-4 border-amber-400',
           glyphMarginClassName: 'bg-amber-400'
         }
       }
@@ -131,8 +131,8 @@ export default function RepoExplorer({
         ref={dragHandle}
         className={`group flex items-center justify-between px-2 py-1 cursor-pointer rounded transition text-xs font-mono select-none ${
           isSelected 
-            ? "bg-sky-950/70 text-sky-200 border-l-2 border-sky-400" 
-            : "text-slate-300 hover:bg-slate-800/60 hover:text-white"
+            ? "bg-zinc-900 text-blue-400 border-l-2 border-blue-500 font-semibold" 
+            : "text-zinc-300 hover:bg-zinc-900/60 hover:text-white"
         }`}
         onClick={() => {
           if (isFile) {
@@ -144,28 +144,28 @@ export default function RepoExplorer({
       >
         <div className="flex items-center space-x-2 truncate">
           {!isFile ? (
-            node.isOpen ? <FolderOpen className="w-3.5 h-3.5 text-amber-400 shrink-0" /> : <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            node.isOpen ? <FolderOpen size={16} strokeWidth={1.8} className="text-zinc-400 shrink-0" /> : <Folder size={16} strokeWidth={1.8} className="text-zinc-500 shrink-0" />
           ) : (
-            <FileCode className={`w-3.5 h-3.5 shrink-0 ${node.data.language === 'python' ? 'text-sky-400' : 'text-slate-400'}`} />
+            <FileCode size={16} strokeWidth={1.8} className={`shrink-0 ${node.data.language === 'python' ? 'text-blue-400' : 'text-zinc-500'}`} />
           )}
           
           <span className="truncate">{node.data.name}</span>
           
           {isFile && node.data.lines_count && (
-            <span className="text-[10px] text-slate-500">({node.data.lines_count} lines)</span>
+            <span className="text-[10px] text-zinc-500 font-mono">({node.data.lines_count} lines)</span>
           )}
         </div>
 
         {isFile && (
           <div className="flex items-center space-x-1.5 shrink-0">
             {node.data.indexed && (
-              <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/40 flex items-center space-x-1" title="FalkorDB AST Indexed">
-                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-900 text-blue-400 border border-zinc-800 flex items-center space-x-1" title="FalkorDB AST Indexed">
+                <CircleCheck size={12} strokeWidth={1.8} className="text-blue-400" />
                 <span>Indexed</span>
               </span>
             )}
             {hasSymbols && (
-              <span className="text-[9px] px-1 rounded bg-slate-800 text-slate-400 font-mono">
+              <span className="text-[9px] px-1 rounded bg-zinc-900 text-zinc-400 border border-zinc-800 font-mono">
                 {node.data.symbols.length} fns
               </span>
             )}
@@ -185,50 +185,50 @@ export default function RepoExplorer({
   }) || [];
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 text-slate-200">
+    <div className="flex flex-col h-full bg-[#000000] text-zinc-200">
       
       {/* ================= 1. REPOSITORY & COMMIT STATUS HEADER ================= */}
-      <div className="p-3 border-b border-slate-800 bg-slate-900/60 backdrop-blur space-y-2">
+      <div className="p-3 border-b border-zinc-800 bg-[#09090b] space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-              Repository Snapshot: <span className="text-emerald-400">{repoData?.repository || activeTenant}</span>
+            <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+            <span className="text-xs font-bold text-zinc-100 font-mono uppercase tracking-wider">
+              Repository Snapshot: <span className="text-blue-400">{repoData?.repository || activeTenant}</span>
             </span>
           </div>
           <button 
             onClick={fetchRepoTree}
-            className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition"
+            className="p-1 text-zinc-400 hover:text-blue-400 rounded hover:bg-zinc-900 transition"
             title="Refresh Repository Tree"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw size={14} strokeWidth={1.8} className={loading ? 'animate-spin text-blue-400' : 'text-zinc-400'} />
           </button>
         </div>
 
         {/* Current Commit Being Analyzed */}
         {repoData?.current_commit && (
-          <div className="bg-slate-950/90 border border-slate-800/80 rounded-lg p-2 flex items-center justify-between text-xs font-mono">
+          <div className="bg-[#000000] border border-zinc-800 rounded-lg p-2 flex items-center justify-between text-xs font-mono">
             <div className="flex items-center space-x-2 truncate">
-              <GitCommit className="w-4 h-4 text-purple-400 shrink-0" />
+              <GitCommit size={16} strokeWidth={1.8} className="text-blue-400 shrink-0" />
               <div className="truncate">
-                <span className="text-purple-300 font-bold mr-1.5">{repoData.current_commit.short_sha}</span>
-                <span className="text-slate-300 truncate">{repoData.current_commit.message}</span>
+                <span className="text-blue-400 font-bold mr-1.5">{repoData.current_commit.short_sha}</span>
+                <span className="text-zinc-300 truncate">{repoData.current_commit.message}</span>
               </div>
             </div>
-            <span className="text-[10px] text-slate-500 shrink-0 ml-2">{repoData.current_commit.date}</span>
+            <span className="text-[10px] text-zinc-500 shrink-0 ml-2">{repoData.current_commit.date}</span>
           </div>
         )}
 
         {/* Quick Stats Badges */}
         {repoData?.stats && (
           <div className="flex flex-wrap gap-2 text-[10px] font-mono">
-            <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+            <span className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-300 border border-zinc-800">
               {repoData.stats.total_files} Files ({repoData.stats.indexed_files} Indexed)
             </span>
-            <span className="px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800/40">
+            <span className="px-2 py-0.5 rounded bg-zinc-900 text-blue-400 border border-zinc-800">
               {repoData.stats.total_symbols} AST Symbols in FalkorDB
             </span>
-            <span className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/40 font-bold">
+            <span className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-300 border border-zinc-800 font-bold">
               {repoData.stats.indexing_status}
             </span>
           </div>
@@ -236,15 +236,15 @@ export default function RepoExplorer({
       </div>
 
       {/* ================= 2. SEARCH BAR (BY FILENAME & SYMBOL) ================= */}
-      <div className="p-2 border-b border-slate-800 bg-slate-900/40">
+      <div className="p-2 border-b border-zinc-800 bg-[#09090b]">
         <div className="relative">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+          <Search size={16} strokeWidth={1.8} className="text-zinc-500 absolute left-2.5 top-2.5" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by filename or symbol (e.g. decrypt_card_token)..."
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 outline-none focus:border-sky-500 font-mono shadow-inner"
+            placeholder="Search by filename or symbol..."
+            className="w-full bg-[#000000] border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-blue-500 font-mono shadow-inner"
           />
         </div>
       </div>
@@ -253,11 +253,11 @@ export default function RepoExplorer({
       <div className="flex-1 flex flex-col min-h-0">
         
         {/* TOP HALF: REACT ARBORIST FILE & SYMBOL TREE */}
-        <div className="h-48 border-b border-slate-800 bg-slate-950/90 overflow-y-auto p-1.5 space-y-1">
+        <div className="h-48 border-b border-zinc-800 bg-[#000000] overflow-y-auto p-1.5 space-y-1">
           {searchTerm ? (
             // Search Results List View
             <div className="space-y-1">
-              <div className="text-[10px] uppercase font-bold text-slate-500 px-2 pt-1 font-mono">
+              <div className="text-[10px] uppercase font-bold text-zinc-500 px-2 pt-1 font-mono">
                 Matching Files & Symbols ({filteredFiles.length})
               </div>
               {filteredFiles.map(f => (
@@ -265,14 +265,17 @@ export default function RepoExplorer({
                   <div
                     onClick={() => handleSelectFile(f)}
                     className={`flex items-center justify-between px-2 py-1 rounded text-xs font-mono cursor-pointer transition ${
-                      selectedFile?.path === f.path ? "bg-sky-950 text-sky-200" : "text-slate-300 hover:bg-slate-800/60"
+                      selectedFile?.path === f.path ? "bg-zinc-900 text-blue-400 font-semibold" : "text-zinc-300 hover:bg-zinc-900/60"
                     }`}
                   >
                     <div className="flex items-center space-x-2 truncate">
-                      <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <FileCode size={16} strokeWidth={1.8} className="text-blue-400 shrink-0" />
                       <span className="font-bold">{f.name}</span>
                     </div>
-                    <span className="text-[10px] text-emerald-400">✓ FalkorDB Indexed</span>
+                    <span className="text-[10px] text-blue-400 flex items-center space-x-1">
+                      <CircleCheck size={12} strokeWidth={1.8} />
+                      <span>Indexed</span>
+                    </span>
                   </div>
                   
                   {/* Symbols matching */}
@@ -282,13 +285,13 @@ export default function RepoExplorer({
                         <div
                           key={s.name}
                           onClick={() => handleSymbolClick(s, f)}
-                          className="flex items-center justify-between text-[11px] font-mono text-slate-400 hover:text-amber-300 cursor-pointer py-0.5 px-1.5 rounded hover:bg-slate-900 transition"
+                          className="flex items-center justify-between text-[11px] font-mono text-blue-400 hover:text-blue-300 cursor-pointer py-0.5 px-1.5 rounded hover:bg-zinc-900 transition"
                         >
                           <span className="flex items-center space-x-1">
-                            <span className="text-amber-400 text-[10px]">fn</span>
+                            <span className="text-zinc-500 text-[10px]">fn</span>
                             <span className="truncate">{s.name}</span>
                           </span>
-                          <span className="text-[10px] text-slate-500 font-mono">:{s.lineno}</span>
+                          <span className="text-[10px] text-zinc-500 font-mono">:{s.lineno}</span>
                         </div>
                       ))}
                     </div>
@@ -314,69 +317,65 @@ export default function RepoExplorer({
         </div>
 
         {/* BOTTOM HALF: MONACO EDITOR SOURCE CODE & DIFF VIEWER */}
-        <div className="flex-1 flex flex-col min-h-0 bg-slate-950">
+        <div className="flex-1 flex flex-col min-h-0 bg-[#000000]">
           
           {/* File Tab Header */}
           {selectedFile ? (
-            <div className="px-3 py-2 border-b border-slate-800 bg-slate-900/80 flex items-center justify-between text-xs font-mono">
+            <div className="px-3 py-2 border-b border-zinc-800 bg-[#09090b] flex items-center justify-between text-xs font-mono">
               <div className="flex items-center space-x-2 truncate">
-                <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                <span className="font-bold text-white truncate">{selectedFile.name}</span>
-                <span className="text-[10px] text-slate-500 truncate">{selectedFile.path}</span>
+                <FileCode size={16} strokeWidth={1.8} className="text-blue-400 shrink-0" />
+                <span className="font-bold text-zinc-100 truncate">{selectedFile.name}</span>
+                <span className="text-[10px] text-zinc-500 truncate">{selectedFile.path}</span>
               </div>
               
               <div className="flex items-center space-x-2 shrink-0">
                 {activePatch && activePatch.file_path.includes(selectedFile.name) && (
                   <button
                     onClick={() => setShowDiffView(!showDiffView)}
-                    className={`text-[10px] px-2 py-1 rounded border font-semibold transition flex items-center space-x-1 ${
-                      showDiffView 
-                        ? "bg-emerald-950 border-emerald-500 text-emerald-300" 
-                        : "bg-slate-800 border-slate-700 text-slate-300 hover:text-white"
-                    }`}
+                    className="text-[10px] px-2 py-1 rounded border font-semibold transition flex items-center space-x-1 text-blue-400 bg-zinc-900 border-zinc-800 hover:border-blue-500"
                   >
-                    <GitPullRequest className="w-3 h-3 text-emerald-400" />
+                    <GitPullRequest size={14} strokeWidth={1.8} className="text-blue-400" />
                     <span>{showDiffView ? "View Source" : "View Patch Diff"}</span>
                   </button>
                 )}
-                <span className="text-[10px] text-slate-400">
+                <span className="text-[10px] text-zinc-500">
                   {fileContentData?.lines_count || selectedFile.lines_count} lines
                 </span>
               </div>
             </div>
           ) : (
-            <div className="px-3 py-2 border-b border-slate-800 bg-slate-900/80 text-xs text-slate-400 font-mono">
+            <div className="px-3 py-2 border-b border-zinc-800 bg-[#000000] text-xs text-zinc-500 font-mono">
               Select a file from the repository tree above
             </div>
           )}
 
           {/* Quick Symbol Navigator Chips */}
           {selectedFile?.symbols && selectedFile.symbols.length > 0 && (
-            <div className="px-3 py-1.5 border-b border-slate-800 bg-slate-950 flex items-center space-x-1.5 overflow-x-auto text-[10px] font-mono">
-              <span className="text-slate-500 shrink-0">AST Symbols:</span>
+            <div className="px-3 py-1.5 border-b border-zinc-800 bg-[#000000] flex items-center space-x-1.5 overflow-x-auto text-[10px] font-mono">
+              <span className="text-zinc-500 shrink-0">Symbols:</span>
               {selectedFile.symbols.map(sym => (
                 <button
                   key={sym.name}
                   onClick={() => handleSymbolClick(sym, selectedFile)}
-                  className={`px-2 py-0.5 rounded border transition shrink-0 flex items-center space-x-1 ${
+                  className={`px-2 py-0.5 rounded border transition shrink-0 flex items-center space-x-1 text-blue-400 ${
                     highlightLine === sym.lineno
-                      ? "bg-amber-950/80 border-amber-500/70 text-amber-200"
-                      : "bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white"
+                      ? "bg-zinc-900 border-blue-500 font-semibold"
+                      : "bg-zinc-900 border-zinc-800 hover:border-blue-500/50"
                   }`}
                 >
-                  <span className="text-amber-400 font-bold">fn</span>
+                  <span className="font-bold text-blue-400">fn</span>
                   <span>{sym.name}</span>
-                  <span className="text-slate-500">:{sym.lineno}</span>
+                  <span className="text-zinc-500">:{sym.lineno}</span>
                 </button>
               ))}
             </div>
           )}
 
           {/* Monaco Editor Container */}
-          <div className="flex-1 relative overflow-hidden bg-slate-950">
+          <div className="flex-1 relative overflow-hidden bg-[#000000]">
             {fileLoading ? (
-              <div className="h-full flex items-center justify-center text-xs text-slate-400 space-x-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-sky-400" />
+              <div className="h-full flex items-center justify-center text-xs text-zinc-400 space-x-2">
+                <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" />
                 <span>Loading source code for {selectedFile?.name}...</span>
               </div>
             ) : showDiffView && activePatch ? (
@@ -391,7 +390,7 @@ export default function RepoExplorer({
                   readOnly: true,
                   minimap: { enabled: false },
                   fontSize: 12,
-                  fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                  fontFamily: "'JetBrains Mono', monospace",
                   renderSideBySide: true,
                   scrollBeyondLastLine: false,
                 }}
@@ -408,7 +407,7 @@ export default function RepoExplorer({
                   readOnly: true,
                   minimap: { enabled: false },
                   fontSize: 12,
-                  fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                  fontFamily: "'JetBrains Mono', monospace",
                   lineNumbers: "on",
                   scrollBeyondLastLine: false,
                   renderLineHighlight: "all",
@@ -417,8 +416,8 @@ export default function RepoExplorer({
                 }}
               />
             ) : (
-              <div className="h-full flex flex-col items-center justify-center text-xs text-slate-500 space-y-1">
-                <Code2 className="w-6 h-6 text-slate-600" />
+              <div className="h-full flex flex-col items-center justify-center text-xs text-zinc-500 space-y-1">
+                <Code2 size={24} strokeWidth={1.8} className="text-zinc-600" />
                 <span>No file opened</span>
               </div>
             )}
