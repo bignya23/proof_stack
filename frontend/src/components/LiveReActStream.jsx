@@ -9,10 +9,10 @@ export default function LiveReActStream({
   isComplete = false 
 }) {
   return (
-    <div className="p-3.5 bg-zinc-950 border border-zinc-800 rounded-xl space-y-3">
+    <div className="p-3.5 bg-zinc-950 border border-zinc-800 rounded-xl space-y-3 font-sans">
       
       {/* Live Stream Header */}
-      <div className="flex items-center justify-between text-xs font-semibold">
+      <div className="flex items-center justify-between text-xs font-semibold font-sans">
         <div className="flex items-center space-x-2">
           {!isComplete ? (
             <span className="relative flex h-2.5 w-2.5">
@@ -22,12 +22,12 @@ export default function LiveReActStream({
           ) : (
             <CircleCheck size={16} strokeWidth={1.8} className="text-zinc-200" />
           )}
-          <span className="text-zinc-100 font-bold tracking-tight">
+          <span className="text-zinc-100 font-bold tracking-tight font-sans">
             {!isComplete ? "Live ReAct Loop" : "Investigation Complete"}
           </span>
         </div>
 
-        <div className="text-[10px] font-mono text-zinc-500 flex items-center space-x-1.5">
+        <div className="text-[10px] font-sans text-zinc-400 flex items-center space-x-1.5">
           <Cpu size={14} strokeWidth={1.8} className="text-zinc-200" />
           <span>Step {streamingTrace.length}</span>
         </div>
@@ -35,7 +35,7 @@ export default function LiveReActStream({
 
       {/* Live Thinking Status Message */}
       {liveMessage && (
-        <div className="p-2.5 bg-[#000000] border border-zinc-800 rounded-lg text-xs font-mono text-zinc-300 flex items-center space-x-2">
+        <div className="p-2.5 bg-[#000000] border border-zinc-800 rounded-lg text-xs font-sans text-zinc-300 flex items-center space-x-2">
           {!isComplete ? (
             <RefreshCw size={14} strokeWidth={1.8} className="text-zinc-200 animate-spin shrink-0" />
           ) : (
@@ -65,16 +65,16 @@ export default function LiveReActStream({
                   ) : (
                     <CircleCheck size={14} strokeWidth={1.8} className="text-zinc-200 shrink-0" />
                   )}
-                  <span className="text-zinc-500 text-[10px]">
+                  <span className="text-zinc-500 text-[10px] font-mono">
                     {String(step.step).padStart(2, '0')}
                   </span>
-                  <span className="font-bold text-zinc-200 truncate">
+                  <span className="font-bold text-zinc-200 truncate font-mono">
                     {step.tool_name || step.agent_name}
                   </span>
                 </div>
 
                 <div className="flex items-center space-x-2 shrink-0">
-                  <span className={`text-[10px] font-semibold ${
+                  <span className={`text-[10px] font-sans font-medium ${
                     isRunning ? "text-blue-400" : "text-zinc-400"
                   }`}>
                     {isRunning ? "Running..." : "Done"}

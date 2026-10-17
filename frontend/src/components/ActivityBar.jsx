@@ -34,7 +34,7 @@ export default function ActivityBar({
   };
 
   return (
-    <aside className="w-12 bg-[#09090b] border-r border-zinc-800 flex flex-col items-center justify-between py-2 select-none z-20 shrink-0">
+    <aside className="w-12 bg-[#09090b] border-r border-zinc-800 flex flex-col items-center justify-between py-2 select-none z-20 shrink-0 font-sans">
       
       {/* Top Activity Icons (20px, 1.8 stroke width) */}
       <div className="flex flex-col items-center space-y-1 w-full">
@@ -65,7 +65,7 @@ export default function ActivityBar({
                 <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-400 ring-2 ring-[#09090b]"></span>
               )}
               {item.count > 0 && (
-                <span className="absolute bottom-1 right-1 text-[9px] font-mono px-1 rounded-full bg-zinc-900 text-zinc-200 border border-zinc-700 leading-none">
+                <span className="absolute bottom-1 right-1 text-[9px] font-sans px-1 rounded-full bg-zinc-900 text-zinc-200 border border-zinc-700 leading-none">
                   {item.count}
                 </span>
               )}

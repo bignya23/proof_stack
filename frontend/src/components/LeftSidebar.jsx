@@ -84,7 +84,7 @@ export default function LeftSidebar({
       <div 
         style={style} 
         ref={dragHandle}
-        className={`flex items-center justify-between px-2 py-0.5 cursor-pointer rounded transition text-xs font-mono select-none ${
+        className={`flex items-center justify-between px-2 py-0.5 cursor-pointer rounded transition text-xs font-sans select-none ${
           isSelected 
             ? "bg-zinc-900 text-blue-400 border-l-2 border-blue-500 font-semibold" 
             : "text-zinc-300 hover:bg-zinc-900/60 hover:text-white"
@@ -130,7 +130,7 @@ export default function LeftSidebar({
   return (
     <div 
       style={{ width: `${width}px` }}
-      className="bg-[#09090b] border-r border-zinc-800 flex flex-col h-full select-none shrink-0 overflow-hidden relative group"
+      className="bg-[#09090b] border-r border-zinc-800 flex flex-col h-full select-none shrink-0 overflow-hidden relative group font-sans"
     >
       {/* Right Edge Resize Handle */}
       <div 
@@ -144,7 +144,7 @@ export default function LeftSidebar({
       />
       
       {/* Sidebar Section Title */}
-      <div className="h-9 px-3 border-b border-zinc-800 flex items-center justify-between text-[11px] font-bold text-zinc-400 font-mono tracking-wider uppercase bg-[#09090b]">
+      <div className="h-9 px-3 border-b border-zinc-800 flex items-center justify-between text-[11px] font-semibold text-zinc-400 font-sans tracking-wider uppercase bg-[#09090b]">
         <span>
           {activeView === 'explorer' && 'Explorer'}
           {activeView === 'git' && 'Source Control'}
@@ -174,16 +174,16 @@ export default function LeftSidebar({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search files & symbols..."
-                className="w-full bg-[#000000] border border-zinc-800 rounded pl-7 pr-2 py-1 text-xs text-zinc-200 outline-none focus:border-blue-500 font-mono"
+                className="w-full bg-[#000000] border border-zinc-800 rounded pl-7 pr-2 py-1 text-xs text-zinc-200 outline-none focus:border-blue-500 font-sans"
               />
             </div>
           </div>
 
           {/* Repository Root Node */}
-          <div className="px-3 py-1.5 flex items-center justify-between text-[11px] font-mono text-zinc-400 font-bold border-b border-zinc-800">
+          <div className="px-3 py-1.5 flex items-center justify-between text-xs font-sans text-zinc-300 font-semibold border-b border-zinc-800">
             <span className="truncate">{activeTenant}</span>
             {repoTree?.stats && (
-              <span className="text-[10px] text-zinc-500 font-normal">
+              <span className="text-[10px] text-zinc-500 font-normal font-sans">
                 {repoTree.stats.indexing_status}
               </span>
             )}
@@ -197,8 +197,8 @@ export default function LeftSidebar({
                   <div key={f.path} className="space-y-0.5">
                     <div
                       onClick={() => onOpenFile(f)}
-                      className={`flex items-center space-x-1.5 px-2 py-1 rounded text-xs font-mono cursor-pointer ${
-                        selectedFile?.path === f.path ? "bg-zinc-900 text-blue-400" : "text-zinc-300 hover:bg-zinc-900/60"
+                      className={`flex items-center space-x-1.5 px-2 py-1 rounded text-xs font-sans cursor-pointer ${
+                        selectedFile?.path === f.path ? "bg-zinc-900 text-blue-400 font-semibold" : "text-zinc-300 hover:bg-zinc-900/60"
                       }`}
                     >
                       <FileCode size={14} strokeWidth={1.8} className="text-zinc-300 shrink-0" />
@@ -210,7 +210,7 @@ export default function LeftSidebar({
                           <div
                             key={s.name}
                             onClick={() => onOpenFile(f, s.lineno, s.name)}
-                            className="flex items-center justify-between text-[10px] font-mono text-zinc-400 hover:text-blue-400 cursor-pointer py-0.5 px-1.5 rounded hover:bg-zinc-900"
+                            className="flex items-center justify-between text-[11px] font-mono text-zinc-400 hover:text-blue-400 cursor-pointer py-0.5 px-1.5 rounded hover:bg-zinc-900"
                           >
                             <span className="truncate">fn {s.name}</span>
                             <span className="text-zinc-600">:{s.lineno}</span>
@@ -242,12 +242,12 @@ export default function LeftSidebar({
 
       {/* ================= 2. GIT COMMITS & SOURCE CONTROL VIEW ================= */}
       {activeView === 'git' && (
-        <div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-2 space-y-3">
+        <div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-2 space-y-3 font-sans">
           
           {/* Pending Agent Patch Card */}
           {patch ? (
             <div className="bg-zinc-950 border border-zinc-800 p-2.5 rounded-lg space-y-2">
-              <div className="flex items-center justify-between text-xs font-mono text-zinc-200 font-bold">
+              <div className="flex items-center justify-between text-xs font-sans text-zinc-200 font-semibold">
                 <span className="flex items-center space-x-1">
                   <GitPullRequest size={16} strokeWidth={1.8} className="text-zinc-200" />
                   <span>Proposed Patch</span>
@@ -258,26 +258,26 @@ export default function LeftSidebar({
               <button
                 onClick={onApplyPatch}
                 disabled={isApplyingPatch}
-                className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded text-xs font-mono font-bold transition flex items-center justify-center space-x-1.5 disabled:opacity-50"
+                className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded text-xs font-sans font-medium transition flex items-center justify-center space-x-1.5 disabled:opacity-50"
               >
                 {isApplyingPatch ? <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-zinc-200" /> : <GitCommit size={16} strokeWidth={1.8} className="text-zinc-200" />}
                 <span>{isApplyingPatch ? "Committing..." : "Apply & Commit"}</span>
               </button>
               {appliedInfo && (
-                <div className="text-[10px] text-blue-400 font-mono">
-                  Committed: {appliedInfo.commit_sha?.slice(0, 7)}
+                <div className="text-[10px] text-blue-400 font-sans">
+                  Committed: <span className="font-mono font-bold">{appliedInfo.commit_sha?.slice(0, 7)}</span>
                 </div>
               )}
             </div>
           ) : (
-            <div className="text-[11px] text-zinc-500 font-mono p-2 bg-[#000000] rounded border border-zinc-800/60">
+            <div className="text-xs text-zinc-500 font-sans p-2 bg-[#000000] rounded border border-zinc-800/60">
               No pending patch.
             </div>
           )}
 
           {/* Commit History Timeline */}
           <div className="space-y-1.5">
-            <span className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-wider">
+            <span className="text-[11px] uppercase font-semibold text-zinc-400 font-sans tracking-wider">
               Commits ({commits.length})
             </span>
             <div className="space-y-1">
@@ -285,18 +285,18 @@ export default function LeftSidebar({
                 <div
                   key={c.sha}
                   onClick={() => setSelectedCommitSha(c.sha)}
-                  className={`p-2 rounded border cursor-pointer transition text-xs font-mono ${
+                  className={`p-2 rounded border cursor-pointer transition text-xs font-sans ${
                     selectedCommitSha === c.sha
                       ? "bg-zinc-900 border-blue-500/60 text-zinc-100"
                       : "bg-[#000000] border-zinc-800/80 text-zinc-300 hover:border-zinc-700"
                   }`}
                 >
                   <div className="flex items-center justify-between text-[10px]">
-                    <span className="text-blue-400 font-bold">{c.short_sha}</span>
-                    <span className="text-zinc-500">{c.date}</span>
+                    <span className="text-blue-400 font-bold font-mono">{c.short_sha}</span>
+                    <span className="text-zinc-500 font-sans">{c.date}</span>
                   </div>
-                  <div className="text-[11px] font-sans text-zinc-200 truncate mt-1">{c.message}</div>
-                  <div className="text-[10px] text-zinc-500 truncate mt-0.5">{c.author}</div>
+                  <div className="text-xs font-sans text-zinc-200 truncate mt-1">{c.message}</div>
+                  <div className="text-[10px] font-sans text-zinc-500 truncate mt-0.5">{c.author}</div>
                 </div>
               ))}
             </div>
@@ -307,7 +307,7 @@ export default function LeftSidebar({
 
       {/* ================= 3. GRAPH SYMBOL NAVIGATOR ================= */}
       {activeView === 'graph' && (
-        <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 font-sans">
           <div className="p-2 border-b border-zinc-800">
             <div className="relative">
               <Search className="w-3 h-3 text-zinc-500 absolute left-2 top-2" />
@@ -316,7 +316,7 @@ export default function LeftSidebar({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Filter graph symbols..."
-                className="w-full bg-[#000000] border border-zinc-800 rounded pl-7 pr-2 py-1 text-xs text-zinc-200 outline-none focus:border-blue-500 font-mono"
+                className="w-full bg-[#000000] border border-zinc-800 rounded pl-7 pr-2 py-1 text-xs text-zinc-200 outline-none focus:border-blue-500 font-sans"
               />
             </div>
           </div>
@@ -326,7 +326,7 @@ export default function LeftSidebar({
               <div
                 key={node.id}
                 onClick={() => onSelectGraphNode(node)}
-                className="flex items-center justify-between px-2 py-1 rounded text-xs font-mono cursor-pointer hover:bg-zinc-900/60 transition group"
+                className="flex items-center justify-between px-2 py-1 rounded text-xs font-sans cursor-pointer hover:bg-zinc-900/60 transition group"
               >
                 <div className="flex items-center space-x-1.5 truncate">
                   <span className={`w-2 h-2 rounded-full shrink-0 ${
@@ -335,11 +335,11 @@ export default function LeftSidebar({
                     node.label === 'Commit' ? 'bg-zinc-500' :
                     node.label === 'Finding' ? 'bg-blue-300' : 'bg-zinc-600'
                   }`}></span>
-                  <span className="text-zinc-300 group-hover:text-white truncate">
+                  <span className="text-zinc-300 font-mono text-xs group-hover:text-white truncate">
                     {node.name || node.display_name}
                   </span>
                 </div>
-                <span className="text-[10px] text-zinc-500 shrink-0">{node.label}</span>
+                <span className="text-[10px] text-zinc-500 font-sans shrink-0">{node.label}</span>
               </div>
             ))}
           </div>
@@ -348,9 +348,9 @@ export default function LeftSidebar({
 
       {/* ================= 4. EVIDENCE REGISTRY SIDEBAR VIEW ================= */}
       {activeView === 'evidence' && (
-        <div className="flex-1 overflow-y-auto p-2 space-y-2">
+        <div className="flex-1 overflow-y-auto p-2 space-y-2 font-sans">
           {evidenceList.length === 0 ? (
-            <div className="text-xs text-zinc-500 font-mono p-3 text-center">
+            <div className="text-xs text-zinc-500 font-sans p-3 text-center">
               No evidence recorded yet.
             </div>
           ) : (
@@ -358,13 +358,13 @@ export default function LeftSidebar({
               <div
                 key={ev.evidence_id || idx}
                 onClick={() => onSelectEvidence && onSelectEvidence(ev)}
-                className="p-2 bg-[#000000] border border-zinc-800/80 rounded hover:border-zinc-700 cursor-pointer transition text-xs font-mono space-y-1"
+                className="p-2 bg-[#000000] border border-zinc-800/80 rounded hover:border-zinc-700 cursor-pointer transition text-xs font-sans space-y-1"
               >
                 <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-blue-400 font-bold">{ev.evidence_id}</span>
-                  <span className="text-zinc-500">{ev.source_tool}</span>
+                  <span className="text-blue-400 font-bold font-mono">{ev.evidence_id}</span>
+                  <span className="text-zinc-500 font-sans">{ev.source_tool}</span>
                 </div>
-                <div className="text-zinc-200 text-[11px] font-sans leading-tight line-clamp-2">
+                <div className="text-zinc-200 text-xs font-sans leading-snug line-clamp-2">
                   {ev.claim}
                 </div>
               </div>
@@ -375,8 +375,8 @@ export default function LeftSidebar({
 
       {/* ================= 5. REPO INGESTION VIEW ================= */}
       {activeView === 'ingest' && (
-        <div className="flex-1 p-3 space-y-3 text-xs font-mono">
-          <div className="text-zinc-400 text-[11px]">
+        <div className="flex-1 p-3 space-y-3 text-xs font-sans">
+          <div className="text-zinc-400 text-xs font-sans">
             Repository path or Git URL:
           </div>
           <input
@@ -388,13 +388,13 @@ export default function LeftSidebar({
           <button
             onClick={() => onIngest(ingestPath, activeTenant)}
             disabled={isIngesting}
-            className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded font-bold transition flex items-center justify-center space-x-1.5 disabled:opacity-50"
+            className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded text-xs font-sans font-medium transition flex items-center justify-center space-x-1.5 disabled:opacity-50"
           >
             {isIngesting ? <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-zinc-200" /> : <FolderGit2 size={16} strokeWidth={1.8} className="text-zinc-200" />}
             <span>{isIngesting ? "Ingesting..." : "Ingest Repository"}</span>
           </button>
           {ingestStatus && (
-            <div className="text-[10px] text-zinc-300 leading-relaxed bg-[#000000] p-2 rounded border border-zinc-800">
+            <div className="text-xs text-zinc-300 font-sans leading-relaxed bg-[#000000] p-2 rounded border border-zinc-800">
               {ingestStatus}
             </div>
           )}

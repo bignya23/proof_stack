@@ -90,37 +90,37 @@ export default function EvidenceRegistry({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 font-sans">
       
       {/* Evidence Stats Bar */}
       <div className="grid grid-cols-4 gap-2 text-center">
         <div className="p-2.5 bg-zinc-950 border border-zinc-800 rounded-lg">
-          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Claims</div>
-          <div className="text-base font-bold font-mono text-zinc-100 mt-0.5">{totalCount}</div>
+          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider font-sans">Claims</div>
+          <div className="text-base font-bold font-sans text-zinc-100 mt-0.5">{totalCount}</div>
         </div>
         <div className="p-2.5 bg-zinc-950 border border-zinc-800 rounded-lg">
-          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Graph</div>
-          <div className="text-base font-bold font-mono text-zinc-100 mt-0.5">{graphObservedCount}</div>
+          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider font-sans">Graph</div>
+          <div className="text-base font-bold font-sans text-zinc-100 mt-0.5">{graphObservedCount}</div>
         </div>
         <div className="p-2.5 bg-zinc-950 border border-zinc-800 rounded-lg">
-          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Code</div>
-          <div className="text-base font-bold font-mono text-zinc-100 mt-0.5">{codeObservedCount}</div>
+          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider font-sans">Code</div>
+          <div className="text-base font-bold font-sans text-zinc-100 mt-0.5">{codeObservedCount}</div>
         </div>
         <div className="p-2.5 bg-zinc-950 border border-zinc-800 rounded-lg">
-          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Verified</div>
-          <div className="text-base font-bold font-mono text-zinc-100 mt-0.5">{verifiedCount}</div>
+          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider font-sans">Verified</div>
+          <div className="text-base font-bold font-sans text-zinc-100 mt-0.5">{verifiedCount}</div>
         </div>
       </div>
 
       {/* Filter Chips (Button text strictly in blue) */}
-      <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 text-[11px] font-mono">
-        <span className="text-zinc-500 flex items-center space-x-1 mr-1">
+      <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 text-xs font-sans">
+        <span className="text-zinc-500 flex items-center space-x-1 mr-1 font-sans">
           <Filter size={14} strokeWidth={1.8} className="text-zinc-300" />
           <span>Filter:</span>
         </span>
         <button
           onClick={() => setFilter("all")}
-          className={`px-2.5 py-1 rounded transition text-blue-400 ${
+          className={`px-2.5 py-1 rounded transition text-blue-400 font-sans text-xs ${
             filter === "all"
               ? "bg-zinc-900 border border-blue-500 font-bold"
               : "bg-zinc-900/60 border border-zinc-800 hover:border-zinc-700 font-medium"
@@ -130,7 +130,7 @@ export default function EvidenceRegistry({
         </button>
         <button
           onClick={() => setFilter("graph_observed")}
-          className={`px-2.5 py-1 rounded transition text-blue-400 flex items-center space-x-1 ${
+          className={`px-2.5 py-1 rounded transition text-blue-400 font-sans text-xs flex items-center space-x-1 ${
             filter === "graph_observed"
               ? "bg-zinc-900 border border-blue-500 font-bold"
               : "bg-zinc-900/60 border border-zinc-800 hover:border-zinc-700 font-medium"
@@ -140,7 +140,7 @@ export default function EvidenceRegistry({
         </button>
         <button
           onClick={() => setFilter("code_observed")}
-          className={`px-2.5 py-1 rounded transition text-blue-400 flex items-center space-x-1 ${
+          className={`px-2.5 py-1 rounded transition text-blue-400 font-sans text-xs flex items-center space-x-1 ${
             filter === "code_observed"
               ? "bg-zinc-900 border border-blue-500 font-bold"
               : "bg-zinc-900/60 border border-zinc-800 hover:border-zinc-700 font-medium"
@@ -150,7 +150,7 @@ export default function EvidenceRegistry({
         </button>
         <button
           onClick={() => setFilter("verified")}
-          className={`px-2.5 py-1 rounded transition text-blue-400 flex items-center space-x-1 ${
+          className={`px-2.5 py-1 rounded transition text-blue-400 font-sans text-xs flex items-center space-x-1 ${
             filter === "verified"
               ? "bg-zinc-900 border border-blue-500 font-bold"
               : "bg-zinc-900/60 border border-zinc-800 hover:border-zinc-700 font-medium"
@@ -161,7 +161,7 @@ export default function EvidenceRegistry({
       </div>
 
       {/* Evidence Cards List */}
-      <div className="space-y-3">
+      <div className="space-y-3 font-sans">
         {filteredEvidence.map((item, index) => {
           const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.graph_observed;
           const cypherExpanded = isExpanded(item.evidence_id || index);
@@ -169,7 +169,7 @@ export default function EvidenceRegistry({
           return (
             <div 
               key={item.evidence_id || index}
-              className="p-3.5 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2.5 hover:border-zinc-700 transition shadow-sm"
+              className="p-3.5 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2.5 hover:border-zinc-700 transition shadow-sm font-sans"
             >
               {/* Card Header: Evidence ID, Status Badge, Tool Badge */}
               <div className="flex items-center justify-between">
@@ -181,7 +181,7 @@ export default function EvidenceRegistry({
                   {/* Status Badge */}
                   <span 
                     title={cfg.description}
-                    className={`flex items-center space-x-1.5 text-[10px] font-mono px-2 py-0.5 rounded border font-semibold ${cfg.color}`}
+                    className={`flex items-center space-x-1.5 text-[10px] font-sans px-2 py-0.5 rounded border font-semibold ${cfg.color}`}
                   >
                     <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`}></span>
                     <span>{cfg.label}</span>
@@ -195,14 +195,14 @@ export default function EvidenceRegistry({
               </div>
 
               {/* Claim Text */}
-              <div className="text-xs text-zinc-100 font-medium leading-relaxed pl-0.5">
+              <div className="text-xs text-zinc-100 font-normal leading-relaxed pl-0.5 font-sans">
                 {item.claim}
               </div>
 
               {/* Source Nodes (Buttons with text strictly in blue) */}
               {item.source_nodes && item.source_nodes.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-zinc-800">
-                  <span className="text-[10px] text-zinc-500 font-mono">Source Nodes:</span>
+                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-zinc-800 font-sans">
+                  <span className="text-[10px] text-zinc-500 font-sans">Source Nodes:</span>
                   {item.source_nodes.map((node, nIdx) => {
                     const isNodeHighlighted = highlightedNodes.has(node);
                     return (
@@ -225,23 +225,23 @@ export default function EvidenceRegistry({
               )}
 
               {/* Cypher Used Section */}
-              <div className="pt-1.5 border-t border-zinc-800">
+              <div className="pt-1.5 border-t border-zinc-800 font-sans">
                 <div className="flex items-center justify-between mb-1">
                   <button
                     onClick={() => toggleCypher(item.evidence_id || index)}
-                    className="flex items-center space-x-1.5 text-[10px] font-mono text-blue-400 hover:text-blue-300 transition"
+                    className="flex items-center space-x-1.5 text-xs font-sans text-blue-400 hover:text-blue-300 transition"
                   >
                     {cypherExpanded ? (
                       <ChevronDown size={14} strokeWidth={1.8} className="text-zinc-300" />
                     ) : (
                       <ChevronRight size={14} strokeWidth={1.8} className="text-zinc-300" />
                     )}
-                    <span className="font-semibold text-blue-400">
+                    <span className="font-medium text-blue-400">
                       cypher_used
                     </span>
                   </button>
 
-                  <span className="text-[9px] font-mono text-zinc-500">
+                  <span className="text-[10px] font-sans text-zinc-500">
                     {cypherExpanded ? "Visible" : "Collapsed"}
                   </span>
                 </div>

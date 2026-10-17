@@ -792,12 +792,11 @@ export default function GraphCanvas({
       
       {/* ================= 1. TOP TOOLBAR: DISPLAY MODES & STATS ================= */}
       <div className="absolute top-3.5 left-4 z-10 flex flex-wrap items-center gap-2">
-        
-        {/* Segmented Display Mode Switcher (Investigation | Overview | Full Graph) */}
+               {/* Segmented Display Mode Switcher (Investigation | Overview | Full Graph) */}
         <div className="bg-[#121214]/95 backdrop-blur-md border border-zinc-800 p-1 rounded-xl shadow-2xl flex items-center space-x-1">
           <button
             onClick={() => setDisplayMode('investigation')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium flex items-center space-x-1.5 transition ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium flex items-center space-x-1.5 transition ${
               displayMode === 'investigation'
                 ? "bg-zinc-850 text-blue-400 border border-zinc-700 font-bold shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
@@ -813,7 +812,7 @@ export default function GraphCanvas({
 
           <button
             onClick={() => setDisplayMode('overview')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium flex items-center space-x-1.5 transition ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium flex items-center space-x-1.5 transition ${
               displayMode === 'overview'
                 ? "bg-zinc-850 text-blue-400 border border-zinc-700 font-bold shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
@@ -826,7 +825,7 @@ export default function GraphCanvas({
 
           <button
             onClick={() => setDisplayMode('full')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium flex items-center space-x-1.5 transition ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium flex items-center space-x-1.5 transition ${
               displayMode === 'full'
                 ? "bg-zinc-850 text-blue-400 border border-zinc-700 font-bold shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
@@ -839,9 +838,9 @@ export default function GraphCanvas({
         </div>
 
         {/* Namespace & Node Count Pill */}
-        <div className="bg-[#121214]/90 backdrop-blur-md border border-zinc-800 px-3 py-1.5 rounded-xl text-xs font-mono text-zinc-400 flex items-center space-x-2 shadow-lg">
-          <span className="text-zinc-500">repo:</span>
-          <span className="text-zinc-200 font-bold">{activeTenant}</span>
+        <div className="bg-[#121214]/90 backdrop-blur-md border border-zinc-800 px-3 py-1.5 rounded-xl text-xs font-sans text-zinc-400 flex items-center space-x-2 shadow-lg">
+          <span className="text-zinc-500 font-sans">repo:</span>
+          <span className="text-zinc-200 font-bold font-mono">{activeTenant}</span>
           <span className="text-zinc-700">|</span>
           <span>
             {filteredGraphData.nodes.length} / {graphData.nodes.length} Nodes
@@ -852,10 +851,10 @@ export default function GraphCanvas({
 
       {/* ================= 2. ACTIVE FOCUS BANNER ================= */}
       {focusedNode && (
-        <div className="absolute top-16 left-4 z-10 bg-zinc-900/95 backdrop-blur-md border border-blue-500/60 px-3.5 py-1.5 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs font-mono text-blue-400 animate-in fade-in duration-150">
+        <div className="absolute top-16 left-4 z-10 bg-zinc-900/95 backdrop-blur-md border border-blue-500/60 px-3.5 py-1.5 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs font-sans text-blue-400 animate-in fade-in duration-150">
           <Target size={14} strokeWidth={1.8} className="text-zinc-200 animate-pulse" />
           <span>
-            Focus: <strong className="text-zinc-100">{focusedNode.name}</strong> ({focusedNode.hops}-Hop Neighborhood)
+            Focus: <strong className="text-zinc-100 font-mono font-semibold">{focusedNode.name}</strong> ({focusedNode.hops}-Hop Neighborhood)
           </span>
           <button
             onClick={() => setFocusedNode(null)}
@@ -877,7 +876,7 @@ export default function GraphCanvas({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search function / symbol..."
-            className="bg-[#121214] border border-zinc-800 text-xs rounded-lg pl-8 pr-7 py-1.5 text-zinc-200 outline-none focus:border-blue-500 font-mono w-48 shadow-lg"
+            className="bg-[#121214] border border-zinc-800 text-xs rounded-lg pl-8 pr-7 py-1.5 text-zinc-200 outline-none focus:border-blue-500 font-sans w-48 shadow-lg"
           />
           <Search size={15} strokeWidth={1.8} className="text-zinc-300 absolute left-2.5 top-2" />
           {searchQuery && (
@@ -894,7 +893,7 @@ export default function GraphCanvas({
         {/* Relationship & Filter Drawer Toggle Button */}
         <button
           onClick={() => setShowFilterMenu(!showFilterMenu)}
-          className={`h-8 px-2.5 rounded-lg border text-xs font-mono transition flex items-center space-x-1.5 text-blue-400 ${
+          className={`h-8 px-2.5 rounded-lg border text-xs font-sans font-medium transition flex items-center space-x-1.5 text-blue-400 ${
             showFilterMenu
               ? "bg-zinc-850 border-blue-500/80 font-bold"
               : "bg-[#121214] border-zinc-800 hover:border-zinc-700"
@@ -908,7 +907,7 @@ export default function GraphCanvas({
         {/* Labels Display Toggle Button */}
         <button
           onClick={() => setShowLabels(!showLabels)}
-          className={`h-8 px-2.5 rounded-lg border text-xs font-mono transition flex items-center space-x-1.5 text-blue-400 ${
+          className={`h-8 px-2.5 rounded-lg border text-xs font-sans font-medium transition flex items-center space-x-1.5 text-blue-400 ${
             showLabels
               ? "bg-zinc-850 border-blue-500/80 font-semibold"
               : "bg-[#121214] border-zinc-800 hover:border-zinc-700 text-zinc-400"
@@ -947,9 +946,9 @@ export default function GraphCanvas({
 
       {/* ================= 4. FILTER POPOVER MENU ================= */}
       {showFilterMenu && (
-        <div className="absolute top-14 right-4 z-20 bg-[#121214]/95 backdrop-blur-md border border-zinc-800 p-4 rounded-xl shadow-2xl w-80 space-y-3.5 text-xs animate-in fade-in duration-150">
+        <div className="absolute top-14 right-4 z-20 bg-[#121214]/95 backdrop-blur-md border border-zinc-800 p-4 rounded-xl shadow-2xl w-80 space-y-3.5 text-xs font-sans animate-in fade-in duration-150">
           <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
-            <span className="font-bold text-zinc-200 font-mono flex items-center space-x-1.5">
+            <span className="font-semibold text-zinc-200 font-sans flex items-center space-x-1.5">
               <Sliders size={14} strokeWidth={1.8} className="text-zinc-200" />
               <span>Graph Filters & Projections</span>
             </span>
@@ -965,13 +964,13 @@ export default function GraphCanvas({
           <div className="flex items-center space-x-2">
             <button
               onClick={applyCodeOnlyFilter}
-              className="flex-1 py-1 px-2 rounded bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-[11px] font-mono text-blue-400 transition text-center"
+              className="flex-1 py-1 px-2 rounded bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-[11px] font-sans font-medium text-blue-400 transition text-center"
             >
               Code Path Only
             </button>
             <button
               onClick={resetAllFilters}
-              className="py-1 px-2 rounded bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-[11px] font-mono text-zinc-400 hover:text-white transition"
+              className="py-1 px-2 rounded bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-[11px] font-sans text-zinc-400 hover:text-white transition"
             >
               Reset
             </button>
@@ -979,14 +978,14 @@ export default function GraphCanvas({
 
           {/* Relationship Filters */}
           <div className="space-y-1.5">
-            <label className="text-[10px] uppercase font-bold text-zinc-500 font-mono">
+            <label className="text-[10px] uppercase font-bold text-zinc-500 font-sans tracking-wider">
               Relationship Types
             </label>
-            <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
+            <div className="grid grid-cols-2 gap-1.5 text-[11px] font-sans">
               {['CALLS', 'DEFINES', 'AUTHORED', 'MODIFIED'].map(rel => (
                 <label 
                   key={rel}
-                  className="flex items-center space-x-2 p-1.5 rounded bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-850 cursor-pointer"
+                  className="flex items-center space-x-2 p-1.5 rounded bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-855 cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -994,7 +993,7 @@ export default function GraphCanvas({
                     onChange={(e) => setEnabledRelTypes(prev => ({ ...prev, [rel]: e.target.checked }))}
                     className="accent-blue-500 rounded"
                   />
-                  <span className="text-zinc-300">{rel}</span>
+                  <span className="text-zinc-300 font-mono text-[10px]">{rel}</span>
                 </label>
               ))}
             </div>
@@ -1002,10 +1001,10 @@ export default function GraphCanvas({
 
           {/* Entity Filters */}
           <div className="space-y-1.5 pt-1 border-t border-zinc-800">
-            <label className="text-[10px] uppercase font-bold text-zinc-500 font-mono">
+            <label className="text-[10px] uppercase font-bold text-zinc-500 font-sans tracking-wider">
               Node Entities
             </label>
-            <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
+            <div className="grid grid-cols-2 gap-1.5 text-[11px] font-sans">
               {[
                 { label: 'Function', color: 'bg-sky-400' },
                 { label: 'Module', color: 'bg-emerald-400' },
@@ -1014,7 +1013,7 @@ export default function GraphCanvas({
               ].map(item => (
                 <label 
                   key={item.label}
-                  className="flex items-center space-x-2 p-1.5 rounded bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-850 cursor-pointer"
+                  className="flex items-center space-x-2 p-1.5 rounded bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-855 cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -1023,7 +1022,7 @@ export default function GraphCanvas({
                     className="accent-blue-500 rounded"
                   />
                   <span className={`w-2 h-2 rounded-full ${item.color}`}></span>
-                  <span className="text-zinc-300">{item.label}</span>
+                  <span className="text-zinc-300 font-sans">{item.label}</span>
                 </label>
               ))}
             </div>
@@ -1033,15 +1032,15 @@ export default function GraphCanvas({
 
       {/* ================= 5. NODE INSPECTOR MODAL PANEL ================= */}
       {selectedNode && (
-        <div className="absolute top-16 right-4 z-20 bg-[#121214]/95 backdrop-blur-md border border-zinc-800 p-4 rounded-xl shadow-2xl max-w-sm w-88 space-y-3 text-xs animate-in fade-in duration-200">
+        <div className="absolute top-16 right-4 z-20 bg-[#121214]/95 backdrop-blur-md border border-zinc-800 p-4 rounded-xl shadow-2xl max-w-sm w-88 space-y-3 text-xs font-sans animate-in fade-in duration-200">
           
           {/* Header */}
           <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
             <div className="flex items-center space-x-2">
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-zinc-900 text-zinc-300 border border-zinc-800 font-mono">
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-zinc-900 text-zinc-300 border border-zinc-800 font-sans">
                 {selectedNode.label}
               </span>
-              <span className="text-[10px] text-zinc-500 font-mono">Inspector</span>
+              <span className="text-[10px] text-zinc-500 font-sans">Inspector</span>
             </div>
             <button 
               onClick={() => setSelectedNode(null)} 
@@ -1064,12 +1063,12 @@ export default function GraphCanvas({
           </div>
 
           {/* Local Exploration Focus Actions */}
-          <div className="p-2.5 bg-zinc-900/60 rounded-lg border border-zinc-800/80 space-y-1.5">
-            <span className="text-[10px] text-zinc-500 uppercase font-bold font-mono">Local Exploration</span>
+          <div className="p-2.5 bg-zinc-900/60 rounded-lg border border-zinc-800/80 space-y-1.5 font-sans">
+            <span className="text-[10px] text-zinc-500 uppercase font-bold font-sans tracking-wider">Local Exploration</span>
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => setFocusedNode({ id: selectedNode.id, name: selectedNode.name, hops: 1 })}
-                className="flex-1 py-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 hover:border-blue-500 text-blue-400 rounded text-[11px] font-mono transition flex items-center justify-center space-x-1"
+                className="flex-1 py-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 hover:border-blue-500 text-blue-400 rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1"
                 title="Focus on this node and dim everything outside 1 hop"
               >
                 <Target size={12} strokeWidth={1.8} className="text-zinc-200" />
@@ -1077,7 +1076,7 @@ export default function GraphCanvas({
               </button>
               <button
                 onClick={() => setFocusedNode({ id: selectedNode.id, name: selectedNode.name, hops: 2 })}
-                className="flex-1 py-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 hover:border-blue-500 text-blue-400 rounded text-[11px] font-mono transition flex items-center justify-center space-x-1"
+                className="flex-1 py-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 hover:border-blue-500 text-blue-400 rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1"
                 title="Focus on this node and dim everything outside 2 hops"
               >
                 <Target size={12} strokeWidth={1.8} className="text-zinc-200" />
@@ -1086,7 +1085,7 @@ export default function GraphCanvas({
               {focusedNode && (
                 <button
                   onClick={() => setFocusedNode(null)}
-                  className="px-2 py-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white rounded text-[11px] font-mono transition"
+                  className="px-2 py-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white rounded text-[11px] font-sans transition"
                   title="Clear Local Focus"
                 >
                   Clear
@@ -1096,39 +1095,39 @@ export default function GraphCanvas({
           </div>
 
           {/* Internal Node ID */}
-          <div className="bg-[#000000] p-2.5 rounded-lg border border-zinc-800 space-y-1.5 font-mono text-[11px]">
+          <div className="bg-[#000000] p-2.5 rounded-lg border border-zinc-800 space-y-1.5 font-sans text-[11px]">
             <div className="flex items-center justify-between">
-              <span className="text-zinc-500 text-[10px] uppercase font-bold">Node ID</span>
+              <span className="text-zinc-500 text-[10px] uppercase font-bold tracking-wider">Node ID</span>
               <button
                 onClick={() => handleCopyNodeId(selectedNode.id)}
-                className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center space-x-1"
+                className="text-[10px] text-blue-400 hover:text-blue-300 font-sans flex items-center space-x-1"
                 title="Copy ID"
               >
                 {copiedId ? <Check size={14} strokeWidth={1.8} className="text-zinc-200" /> : <Copy size={14} strokeWidth={1.8} className="text-zinc-200" />}
                 <span>{copiedId ? "Copied" : "Copy"}</span>
               </button>
             </div>
-            <div className="text-zinc-300 font-bold break-all">#{selectedNode.id}</div>
+            <div className="text-zinc-300 font-bold font-mono break-all">#{selectedNode.id}</div>
             {selectedNode.sha && (
-              <div className="text-[10px] text-zinc-400 pt-1 border-t border-zinc-900">
-                Commit: <span className="font-bold text-zinc-200">{selectedNode.sha}</span>
+              <div className="text-[10px] text-zinc-400 pt-1 border-t border-zinc-900 font-sans">
+                Commit: <span className="font-bold text-zinc-200 font-mono">{selectedNode.sha}</span>
               </div>
             )}
           </div>
 
           {/* File location */}
           {(selectedNode.file || selectedNode.path) && (
-            <div className="text-[11px] text-zinc-300 font-mono flex items-center space-x-1.5 bg-[#000000] px-2 py-1.5 rounded border border-zinc-800">
-              <span className="text-zinc-500">path:</span>
-              <span className="text-zinc-200 truncate">{selectedNode.file || selectedNode.path}</span>
-              {selectedNode.lineno && <span className="text-zinc-500 font-bold">:{selectedNode.lineno}</span>}
-              {selectedNode.loc && <span className="text-zinc-500 text-[10px]">({selectedNode.loc} loc)</span>}
+            <div className="text-[11px] text-zinc-300 font-sans flex items-center space-x-1.5 bg-[#000000] px-2 py-1.5 rounded border border-zinc-800">
+              <span className="text-zinc-500 font-sans">path:</span>
+              <span className="text-zinc-200 truncate font-mono">{selectedNode.file || selectedNode.path}</span>
+              {selectedNode.lineno && <span className="text-zinc-500 font-bold font-mono">:{selectedNode.lineno}</span>}
+              {selectedNode.loc && <span className="text-zinc-500 text-[10px] font-sans">({selectedNode.loc} loc)</span>}
             </div>
           )}
 
           {/* ADR Decision Tag */}
           {selectedNode.decision_tag && (
-            <div className="text-[11px] text-zinc-200 font-mono font-semibold bg-zinc-900 p-2 rounded border border-zinc-800 flex items-center space-x-1.5">
+            <div className="text-[11px] text-zinc-200 font-sans font-semibold bg-zinc-900 p-2 rounded border border-zinc-800 flex items-center space-x-1.5">
               <ShieldAlert size={14} strokeWidth={1.8} className="text-zinc-200" />
               <span>Decision: {selectedNode.decision_tag}</span>
             </div>
@@ -1137,35 +1136,35 @@ export default function GraphCanvas({
           {/* Incident Memory */}
           {selectedNode.summary && (
             <div className="text-[11px] text-zinc-300 bg-[#000000] p-2 rounded border border-zinc-800 leading-relaxed font-sans">
-              <strong className="block text-[10px] uppercase text-zinc-400 font-mono">Incident Memory:</strong>
+              <strong className="block text-[10px] uppercase text-zinc-400 font-sans tracking-wider">Incident Memory:</strong>
               {selectedNode.summary}
             </div>
           )}
 
           {/* Connected Graph Relationships */}
-          <div className="space-y-1 pt-1 border-t border-zinc-800 text-[10px] font-mono">
-            <span className="text-zinc-500 uppercase font-bold">Connected Relationships</span>
-            <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
+          <div className="space-y-1 pt-1 border-t border-zinc-800 text-[10px] font-sans">
+            <span className="text-zinc-500 uppercase font-bold tracking-wider">Connected Relationships</span>
+            <div className="max-h-24 overflow-y-auto space-y-1 pr-1 font-sans">
               {connectedNeighbors.incoming.map((rel, idx) => (
                 <div key={idx} className="flex items-center space-x-1 text-zinc-400">
                   <ArrowRight size={14} strokeWidth={1.8} className="text-zinc-300 rotate-180" />
-                  <span className="text-zinc-200 font-bold">{rel.type}</span>
-                  <span className="text-zinc-500">from</span>
-                  <span className="text-zinc-300 truncate">{rel.from}</span>
-                  {rel.line && <span className="text-zinc-500">:{rel.line}</span>}
+                  <span className="text-zinc-200 font-bold font-mono">{rel.type}</span>
+                  <span className="text-zinc-500 font-sans">from</span>
+                  <span className="text-zinc-300 truncate font-mono">{rel.from}</span>
+                  {rel.line && <span className="text-zinc-500 font-mono">:{rel.line}</span>}
                 </div>
               ))}
               {connectedNeighbors.outgoing.map((rel, idx) => (
                 <div key={idx} className="flex items-center space-x-1 text-zinc-400">
                   <ArrowRight size={14} strokeWidth={1.8} className="text-zinc-300" />
-                  <span className="text-zinc-200 font-bold">{rel.type}</span>
-                  <span className="text-zinc-500">to</span>
-                  <span className="text-zinc-300 truncate">{rel.to}</span>
-                  {rel.line && <span className="text-zinc-500">:{rel.line}</span>}
+                  <span className="text-zinc-200 font-bold font-mono">{rel.type}</span>
+                  <span className="text-zinc-500 font-sans">to</span>
+                  <span className="text-zinc-300 truncate font-mono">{rel.to}</span>
+                  {rel.line && <span className="text-zinc-500 font-mono">:{rel.line}</span>}
                 </div>
               ))}
               {connectedNeighbors.incoming.length === 0 && connectedNeighbors.outgoing.length === 0 && (
-                <div className="text-zinc-500 italic">No direct edges loaded</div>
+                <div className="text-zinc-500 italic font-sans">No direct edges loaded</div>
               )}
             </div>
           </div>
@@ -1173,7 +1172,7 @@ export default function GraphCanvas({
           {/* Action button */}
           <button
             onClick={() => handleCenterNode(selectedNode)}
-            className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded text-xs font-mono font-medium flex items-center justify-center space-x-1.5 transition"
+            className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded text-xs font-sans font-medium flex items-center justify-center space-x-1.5 transition"
           >
             <Compass size={16} strokeWidth={1.8} className="text-zinc-200" />
             <span>Center Node in View</span>
@@ -1185,7 +1184,7 @@ export default function GraphCanvas({
       <div className="absolute bottom-4 right-4 z-10 bg-[#121214]/90 backdrop-blur-md border border-zinc-800 p-3 rounded-xl shadow-2xl space-y-1.5 text-[11px] font-sans">
         <div className="font-bold text-zinc-300 pb-1 border-b border-zinc-800 flex items-center justify-between">
           <span>Topology Legend</span>
-          <span className="text-[10px] text-zinc-500 font-mono">FalkorDB</span>
+          <span className="text-[10px] text-zinc-500 font-sans">FalkorDB</span>
         </div>
         
         {/* Node types */}
@@ -1211,7 +1210,7 @@ export default function GraphCanvas({
         {/* Investigated Path Highlight Legend */}
         <div className="pt-1.5 border-t border-zinc-800 flex items-center space-x-2 text-[10px]">
           <span className="w-3 h-1.5 rounded-full bg-amber-400"></span>
-          <span className="text-amber-400 font-semibold font-mono">Investigated Path (Gold)</span>
+          <span className="text-amber-400 font-semibold font-sans">Investigated Path (Gold)</span>
         </div>
       </div>
 

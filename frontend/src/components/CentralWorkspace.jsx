@@ -106,17 +106,17 @@ export default function CentralWorkspace({
   }, [highlightLine, fileContent]);
 
   return (
-    <main className="flex-1 flex flex-col h-full bg-[#000000] relative overflow-hidden min-w-0">
+    <main className="flex-1 flex flex-col h-full bg-[#000000] relative overflow-hidden min-w-0 font-sans">
       
       {/* ================= 1. VS CODE EDITOR TAB BAR ================= */}
-      <div className="h-9 bg-[#09090b] border-b border-zinc-800 flex items-center overflow-x-auto select-none shrink-0 z-10 px-1">
+      <div className="h-9 bg-[#09090b] border-b border-zinc-800 flex items-center overflow-x-auto select-none shrink-0 z-10 px-1 font-sans">
         {openTabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           return (
             <div
               key={tab.id}
               onClick={() => setActiveTabId(tab.id)}
-              className={`h-full flex items-center space-x-2 px-3 border-r border-zinc-800 text-xs font-mono cursor-pointer transition shrink-0 ${
+              className={`h-full flex items-center space-x-2 px-3 border-r border-zinc-800 text-xs font-sans font-medium cursor-pointer transition shrink-0 ${
                 isActive 
                   ? "bg-[#000000] text-zinc-100 border-t-2 border-t-blue-500 font-semibold" 
                   : "bg-[#09090b] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40"
@@ -168,8 +168,8 @@ export default function CentralWorkspace({
             
             {/* Quick Symbol Jump Bar (Buttons with text strictly in blue) */}
             {fileContent?.symbols && fileContent.symbols.length > 0 && (
-              <div className="px-3 py-1 bg-[#09090b] border-b border-zinc-800 flex items-center space-x-2 text-[10px] font-mono overflow-x-auto shrink-0">
-                <span className="text-zinc-500 shrink-0">Symbols:</span>
+              <div className="px-3 py-1 bg-[#09090b] border-b border-zinc-800 flex items-center space-x-2 text-xs font-sans overflow-x-auto shrink-0">
+                <span className="text-zinc-400 shrink-0 font-sans text-xs">Symbols:</span>
                 {fileContent.symbols.map(s => (
                   <button
                     key={s.name}
@@ -178,15 +178,15 @@ export default function CentralWorkspace({
                       scrollToLine(s.lineno);
                       if (onSelectNodeByName) onSelectNodeByName(s.name);
                     }}
-                    className={`px-2 py-0.5 rounded border transition shrink-0 flex items-center space-x-1 text-blue-400 ${
+                    className={`px-2 py-0.5 rounded border transition shrink-0 flex items-center space-x-1 text-blue-400 text-xs ${
                       highlightLine === s.lineno
                         ? "bg-zinc-900 border-blue-500 font-semibold"
-                        : "bg-zinc-900 border-zinc-800 hover:border-blue-500/50 hover:bg-zinc-850"
+                        : "bg-zinc-900 border-zinc-800 hover:border-blue-500/50 hover:bg-zinc-850 font-medium"
                     }`}
                   >
-                    <span className="font-bold text-blue-400">fn</span>
-                    <span>{s.name}</span>
-                    <span className="text-zinc-500">:{s.lineno}</span>
+                    <span className="font-bold text-blue-400 font-mono">fn</span>
+                    <span className="font-mono">{s.name}</span>
+                    <span className="text-zinc-500 font-mono">:{s.lineno}</span>
                   </button>
                 ))}
               </div>
@@ -248,19 +248,19 @@ export default function CentralWorkspace({
         {/* Console Header Bar */}
         <div 
           onClick={() => setIsConsoleOpen(!isConsoleOpen)}
-          className="h-7 px-3 flex items-center justify-between text-xs font-mono text-zinc-400 cursor-pointer hover:bg-zinc-900/50 select-none shrink-0"
+          className="h-7 px-3 flex items-center justify-between text-xs font-sans text-zinc-400 cursor-pointer hover:bg-zinc-900/50 select-none shrink-0"
         >
           <div className="flex items-center space-x-2">
             <Terminal size={16} strokeWidth={1.8} className="text-zinc-200" />
-            <span className="font-bold text-zinc-200">Terminal & Console</span>
+            <span className="font-semibold text-zinc-200">Terminal & Console</span>
             {isStreaming && (
               <span className="flex items-center space-x-1 text-zinc-300">
                 <RefreshCw size={14} strokeWidth={1.8} className="animate-spin text-zinc-200" />
-                <span className="text-[10px]">Turn {liveTurn} Deliberating</span>
+                <span className="text-[11px] font-sans">Turn {liveTurn} Deliberating</span>
               </span>
             )}
             {!isStreaming && streamingTrace.length > 0 && (
-              <span className="text-[10px] text-zinc-400 flex items-center space-x-1">
+              <span className="text-[11px] font-sans text-zinc-400 flex items-center space-x-1">
                 <CircleCheck size={14} strokeWidth={1.8} className="text-zinc-200" />
                 <span>{streamingTrace.length} Steps Executed</span>
               </span>
@@ -268,7 +268,7 @@ export default function CentralWorkspace({
           </div>
 
           <div className="flex items-center space-x-2">
-            <span className="text-[11px] text-zinc-500 truncate max-w-sm">
+            <span className="text-[11px] font-sans text-zinc-500 truncate max-w-sm">
               {liveThinkingMessage || "Ready"}
             </span>
             {isConsoleOpen ? (
