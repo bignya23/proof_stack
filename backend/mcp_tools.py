@@ -187,6 +187,35 @@ def mcp_find_symbol(symbol_name: str, tenant_id: str = "sample-fintech") -> dict
         })
         highlighted.add(r[0])
 
+    if not matches:
+        tokens = [tok for tok in re.split(r"[_\s\-]+", symbol_name.lower()) if len(tok) >= 3]
+        if tokens:
+            fallback_cypher = """
+            MATCH (fn:Function)
+            WHERE ANY(t IN $tokens WHERE toLower(fn.name) CONTAINS t OR toLower(fn.file) CONTAINS t)
+            RETURN fn.name        AS name,
+                   fn.qname       AS qname,
+                   fn.file        AS file_path,
+                   fn.lineno      AS start_line,
+                   fn.loc         AS loc,
+                   fn.docstring   AS docstring
+            LIMIT 5
+            """
+            try:
+                fallback_res = g.query(fallback_cypher, {"tokens": tokens})
+                for r in fallback_res.result_set:
+                    matches.append({
+                        "name":       r[0],
+                        "qname":      r[1],
+                        "file_path":  r[2],
+                        "start_line": r[3],
+                        "loc":        r[4],
+                        "docstring":  r[5],
+                    })
+                    highlighted.add(r[0])
+            except Exception:
+                pass
+
     return {
         "tool":             "mcp_find_symbol",
         "track":            "Track 01: Symbol Resolution",
@@ -400,9 +429,9 @@ def mcp_recall_episodic_memory(function_name: str, tenant_id: str = "sample-fint
 @mcp.tool()
 def mcp_write_episodic_memory(
     function_name: str,
-    agent_role: str,
     summary: str,
     remediation: str,
+    agent_role: str = "TriageAgent",
     session_id: str = "session-live",
     tenant_id: str = "sample-fintech",
 ) -> dict:

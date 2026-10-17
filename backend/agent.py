@@ -491,10 +491,25 @@ def analyze_query_intent(prompt: str, tenant_id: str = "sample-fintech") -> dict
             target_file = "fraud_engine.py"
         elif target_fn in ["record_ledger_entry"]:
             target_file = "ledger_db.py"
-        else:
+        elif tenant_id == "sample-fintech":
             target_file = "vault_client.py"
+        else:
+            target_file = None
 
-    entrypoint_fn = "post_checkout_endpoint"
+    # Dynamic symbol match from active FalkorDB graph for non-fintech / custom repositories
+    if tenant_id != "sample-fintech" and not target_fn:
+        try:
+            g = get_repo_graph(tenant_id)
+            clean_tokens = [w for w in re.findall(r"\b[a-zA-Z0-9_]{3,}\b", p_lower) if w not in {"the", "and", "for", "with", "are", "causes", "causing", "http", "error", "errors", "why", "what", "how", "from", "into", "over", "under", "fail", "fails", "failure", "failures"}]
+            if clean_tokens:
+                res = g.query("MATCH (fn:Function) WHERE ANY(w IN $words WHERE toLower(fn.name) CONTAINS w OR toLower(fn.file) CONTAINS w) RETURN fn.name, fn.file LIMIT 1", {"words": clean_tokens})
+                if res.result_set:
+                    target_fn = res.result_set[0][0]
+                    target_file = res.result_set[0][1]
+        except Exception as err:
+            print(f"[!] Dynamic intent symbol match error: {err}")
+
+    entrypoint_fn = "post_checkout_endpoint" if tenant_id == "sample-fintech" else None
 
     is_triage = any(w in p_lower for w in ["504", "timeout", "incident", "failing", "flash-sale", "triage", "propose an actionable code patch", "remediate", "fix"])
     is_blast = any(w in p_lower for w in ["blast radius", "pagerank", "systemic risk", "upstream", "rotates its key", "hotspot", "callers", "who calls", "impact", "rank"])
@@ -503,31 +518,31 @@ def analyze_query_intent(prompt: str, tenant_id: str = "sample-fintech") -> dict
 
     if is_triage:
         category = "incident_triage"
-        if not target_fn:
+        if not target_fn and tenant_id == "sample-fintech":
             target_fn = "decrypt_card_token"
     elif is_blast:
         category = "blast_radius_audit"
-        if not target_fn:
+        if not target_fn and tenant_id == "sample-fintech":
             target_fn = "fetch_signing_key" if "signing" in p_lower or "rotates" in p_lower else "decrypt_card_token"
     elif is_provenance:
         category = "provenance_governance"
-        if not target_fn:
+        if not target_fn and tenant_id == "sample-fintech":
             target_fn = "decrypt_card_token"
     elif is_inspection:
         category = "code_inspection"
-        if not target_fn:
+        if not target_fn and tenant_id == "sample-fintech":
             target_fn = "decrypt_card_token"
     else:
         if target_fn or any(f in p_lower for f in known_files):
             category = "code_inspection"
-            if not target_fn:
+            if not target_fn and tenant_id == "sample-fintech":
                 target_fn = "decrypt_card_token"
         else:
             category = "general_code_agent"
 
     return {
         "category": category,
-        "target_fn": target_fn or "decrypt_card_token",
+        "target_fn": target_fn,
         "entrypoint_fn": entrypoint_fn,
         "target_file": target_file,
     }
@@ -981,7 +996,7 @@ def run_llm_mcp_agent(
     prompt: str,
     tenant_id: str = "sample-fintech",
     function_name: Optional[str] = None,
-    entrypoint_fn: Optional[str] = "post_checkout_endpoint",
+    entrypoint_fn: Optional[str] = None,
 ) -> dict:
     """
     [Track 01: Dynamic Tool Selection via FastMCP]
@@ -1000,23 +1015,24 @@ def run_llm_mcp_agent(
         return execute_deterministic_reasoner(prompt, tenant_id, target_fn, entrypoint)
 
     system_prompt = load_system_prompt()
+    user_content_parts = [f"Repository tenant: {tenant_id}"]
+    if target_fn:
+        user_content_parts.append(f"Target function context: {target_fn}")
+    if entrypoint:
+        user_content_parts.append(f"Entrypoint context: {entrypoint}")
+    user_content_parts.append(f"User request: {prompt}\n")
+    user_content_parts.append(
+        "INVESTIGATION & REASONING RULES:\n"
+        "- Select ONLY the tools necessary for this specific query.\n"
+        "- If this is a general question, synthesize directly without calling tools.\n"
+        "- If inspecting code, checking callers/blast radius, investigating provenance, or triaging an incident, call only the relevant tools.\n"
+        "- Ground all repository-specific claims, decisions, and recommendations in FalkorDB tool results.\n"
+        "- Only produce a code patch if the query justifies a code modification and source code has been inspected. Otherwise, set diff to \"\"."
+    )
+
     messages = [
         {"role": "system", "content": system_prompt},
-        {
-            "role": "user",
-            "content": (
-                f"Repository tenant: {tenant_id}\n"
-                f"Target function context: {target_fn}\n"
-                f"Entrypoint context: {entrypoint}\n"
-                f"User request: {prompt}\n\n"
-                "INVESTIGATION & REASONING RULES:\n"
-                "- Select ONLY the tools necessary for this specific query.\n"
-                "- If this is a general question, synthesize directly without calling tools.\n"
-                "- If inspecting code, checking callers/blast radius, investigating provenance, or triaging an incident, call only the relevant tools.\n"
-                "- Ground all repository-specific claims, decisions, and recommendations in FalkorDB tool results.\n"
-                "- Only produce a code patch if the query justifies a code modification and source code has been inspected. Otherwise, set diff to \"\"."
-            ),
-        },
+        {"role": "user", "content": "\n".join(user_content_parts)},
     ]
 
     agent_trace     = []
@@ -1660,7 +1676,7 @@ def stream_agent_investigation(
     prompt: str,
     tenant_id: str = "sample-fintech",
     function_name: Optional[str] = None,
-    entrypoint_fn: Optional[str] = "post_checkout_endpoint",
+    entrypoint_fn: Optional[str] = None,
 ):
     """
     [Streaming ReAct Loop via SSE]
@@ -1688,28 +1704,29 @@ def stream_agent_investigation(
 
     try:
         system_prompt = load_system_prompt()
+        user_content_parts = [f"Repository tenant: {tenant_id}"]
+        if target_fn:
+            user_content_parts.append(f"Target function context: {target_fn}")
+        if entrypoint:
+            user_content_parts.append(f"Entrypoint context: {entrypoint}")
+        user_content_parts.append(f"User request: {prompt}\n")
+        user_content_parts.append(
+            "INVESTIGATION & REASONING RULES:\n"
+            "- Select ONLY the tools necessary for this specific query.\n"
+            "- If this is a general question, synthesize directly without calling tools.\n"
+            "- If inspecting code, checking callers/blast radius, investigating provenance, or triaging an incident, anchor symbols first using mcp_find_symbol.\n"
+            "- Ground all repository-specific claims, decisions, and recommendations in FalkorDB tool results.\n"
+            "- Only produce a code patch if the query justifies a code modification and source code has been inspected. Otherwise, set diff to \"\"."
+        )
+
         messages = [
             {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": (
-                    f"Repository tenant: {tenant_id}\n"
-                    f"Target function context: {target_fn}\n"
-                    f"Entrypoint context: {entrypoint}\n"
-                    f"User request: {prompt}\n\n"
-                    "INVESTIGATION & REASONING RULES:\n"
-                    "- Select ONLY the tools necessary for this specific query.\n"
-                    "- If this is a general question, synthesize directly without calling tools.\n"
-                    "- If inspecting code, checking callers/blast radius, investigating provenance, or triaging an incident, call only the relevant tools.\n"
-                    "- Ground all repository-specific claims, decisions, and recommendations in FalkorDB tool results.\n"
-                    "- Only produce a code patch if the query justifies a code modification and source code has been inspected. Otherwise, set diff to \"\"."
-                ),
-            },
+            {"role": "user", "content": "\n".join(user_content_parts)},
         ]
 
         agent_trace = []
         evidence = []
-        all_highlighted = {target_fn, entrypoint}
+        all_highlighted = {n for n in [target_fn, entrypoint] if n}
         step_num = 1
         execution_path = {"path_found": False, "nodes": [], "edges": [], "hops": -1}
 

@@ -196,8 +196,8 @@ def stream_investigation_endpoint(req: InvestigatePayload):
 @app.get("/api/agent/investigate/stream")
 def stream_investigation_get(
     prompt: Optional[str] = "Checkout is failing with 504 timeouts. Investigate decrypt_card_token and fix it.",
-    function_name: Optional[str] = "decrypt_card_token",
-    entrypoint_fn: Optional[str] = "post_checkout_endpoint",
+    function_name: Optional[str] = None,
+    entrypoint_fn: Optional[str] = None,
     tenant_id: str = "sample-fintech",
 ):
     """GET endpoint variant for browser EventSource or curl testing."""
