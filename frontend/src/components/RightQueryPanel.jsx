@@ -222,9 +222,10 @@ export default function RightQueryPanel({
             <div className="flex items-center justify-between text-blue-400 font-mono font-bold text-xs">
               <span className="flex items-center space-x-1.5">
                 <Sparkles size={16} strokeWidth={1.8} className="text-zinc-200" />
-                <span>Investigation Complete</span>
+                <span>{Boolean(activePatch?.diff) ? "Investigation & Patch Complete" : "Analysis Complete"}</span>
               </span>
-              {investigationResult.synthesis.governing_adr && (
+              {investigationResult.synthesis.governing_adr && 
+               investigationResult.synthesis.governing_adr !== "Not found in indexed provenance." && (
                 <span className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-300 border border-zinc-800 text-[10px]">
                   {investigationResult.synthesis.governing_adr}
                 </span>
@@ -244,18 +245,20 @@ export default function RightQueryPanel({
             <div className="pt-1 flex items-center space-x-2">
               <button
                 onClick={onOpenEvidenceTab}
-                className="flex-1 py-1.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-blue-400 rounded text-[11px] font-mono font-medium transition flex items-center justify-center space-x-1"
+                className="flex-1 py-1.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-blue-400 rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1"
               >
                 <Database size={13} strokeWidth={1.8} className="text-zinc-200" />
                 <span>Evidence ({investigationResult.evidence_registry?.length || 0})</span>
               </button>
-              <button
-                onClick={onOpenCommitTab}
-                className="flex-1 py-1.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-blue-400 rounded text-[11px] font-mono font-bold transition flex items-center justify-center space-x-1"
-              >
-                <GitPullRequest size={13} strokeWidth={1.8} className="text-zinc-200" />
-                <span>Review Patch</span>
-              </button>
+              {Boolean(activePatch?.diff) && (
+                <button
+                  onClick={onOpenCommitTab}
+                  className="flex-1 py-1.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-blue-400 rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1"
+                >
+                  <GitPullRequest size={13} strokeWidth={1.8} className="text-zinc-200" />
+                  <span>Review Patch</span>
+                </button>
+              )}
             </div>
           </div>
         )}
