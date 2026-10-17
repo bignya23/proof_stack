@@ -1,5 +1,6 @@
 # backend/server.py
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -304,31 +305,72 @@ def apply_patch_and_commit(req: ApplyPatchPayload):
 
 @app.post("/api/ingest")
 def ingest_any_local_or_github_repo(req: IngestPayload):
-    """Allows live ingestion of any local folder path or public GitHub URL into an isolated tenant graph."""
+    """
+    Allows live ingestion of any local folder path or public GitHub URL into an isolated tenant graph.
+    Clones/persists the code repository into ./repos/<tenant_id> for continuous graph-grounded inspection.
+    """
     target = req.repo_path_or_url.strip()
-    temp_dir = None
+    root_dir = Path(__file__).resolve().parent.parent
+    repos_dir = root_dir / "repos"
+    repos_dir.mkdir(parents=True, exist_ok=True)
+
+    clean_tenant = re.sub(r"[^a-zA-Z0-9_\-]", "_", req.tenant_id).strip("_")
+    if not clean_tenant:
+        clean_tenant = "custom-repo"
+
+    dest_dir = repos_dir / clean_tenant
+
     try:
         if target.startswith("http://") or target.startswith("https://"):
-            temp_dir = tempfile.mkdtemp(prefix="nexus_git_")
-            subprocess.check_call(["git", "clone", "--depth", "40", target, temp_dir])
-            ingest_repo_to_falkordb(temp_dir, tenant_id=req.tenant_id)
+            if dest_dir.exists():
+                shutil.rmtree(dest_dir, ignore_errors=True)
+            print(f"[*] Cloning {target} into {dest_dir}...")
+            subprocess.check_call(["git", "clone", "--depth", "50", target, str(dest_dir)])
+            ingest_repo_to_falkordb(str(dest_dir), tenant_id=clean_tenant)
+            return {
+                "status": "ingested",
+                "tenant_graph": f"repo:{clean_tenant}",
+                "tenant_id": clean_tenant,
+                "repo_path": str(dest_dir),
+            }
         else:
-            resolved_target = target
-            if not os.path.exists(resolved_target):
-                root_check = (Path(__file__).resolve().parent.parent / target).resolve()
+            resolved_target = Path(target).expanduser().resolve()
+            if not resolved_target.exists():
+                root_check = (root_dir / target).resolve()
                 if root_check.exists():
-                    resolved_target = str(root_check)
+                    resolved_target = root_check
                 else:
                     backend_check = (Path(__file__).resolve().parent / target).resolve()
                     if backend_check.exists():
-                        resolved_target = str(backend_check)
+                        resolved_target = backend_check
                     else:
-                        raise HTTPException(status_code=400, detail=f"Path not found: {target}")
-            ingest_repo_to_falkordb(resolved_target, tenant_id=req.tenant_id)
-        return {"status": "ingested", "tenant_graph": f"repo:{req.tenant_id}"}
-    finally:
-        if temp_dir and os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir, ignore_errors=True)
+                        raise HTTPException(status_code=400, detail=f"Local path not found: {target}")
+
+            if str(resolved_target) != str(dest_dir):
+                if dest_dir.exists():
+                    shutil.rmtree(dest_dir, ignore_errors=True)
+                shutil.copytree(
+                    resolved_target,
+                    dest_dir,
+                    ignore=shutil.ignore_patterns(".git", "__pycache__", "node_modules", "venv", ".venv")
+                )
+                git_dir = resolved_target / ".git"
+                if git_dir.exists():
+                    shutil.copytree(git_dir, dest_dir / ".git")
+
+            ingest_repo_to_falkordb(str(dest_dir), tenant_id=clean_tenant)
+            return {
+                "status": "ingested",
+                "tenant_graph": f"repo:{clean_tenant}",
+                "tenant_id": clean_tenant,
+                "repo_path": str(dest_dir),
+            }
+    except subprocess.CalledProcessError as cpe:
+        print(f"[!] Git clone failed: {cpe}")
+        raise HTTPException(status_code=400, detail=f"Git clone failed. Please verify the URL: {cpe}")
+    except Exception as e:
+        print(f"[!] Ingestion error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def _detect_language(file_name: str) -> str:
@@ -562,7 +604,7 @@ def get_repository_file(tenant_id: str, path: str):
 
 
 @app.get("/api/repositories/{tenant_id}/commits")
-def get_repository_commits(tenant_id: str, limit: int = 20):
+def get_repository_commits(tenant_id: str, limit: int = 100):
     """
     [VS Code Source Control Sidebar]
     Returns list of Git commits from the repository snapshot with message, sha, author, and date.

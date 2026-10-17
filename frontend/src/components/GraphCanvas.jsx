@@ -790,13 +790,14 @@ export default function GraphCanvas({
   return (
     <div className="flex-1 relative bg-[#000000] flex flex-col h-full overflow-hidden select-none font-sans">
       
-      {/* ================= 1. TOP TOOLBAR: DISPLAY MODES & STATS ================= */}
-      <div className="absolute top-3.5 left-4 z-10 flex flex-wrap items-center gap-2">
-               {/* Segmented Display Mode Switcher (Investigation | Overview | Full Graph) */}
-        <div className="bg-[#121214]/95 backdrop-blur-md border border-zinc-800 p-1 rounded-xl shadow-2xl flex items-center space-x-1">
+      {/* ================= 1. TOP TOOLBAR: UNIFIED DISPLAY MODES & CONTROLS ================= */}
+      <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none gap-2">
+        
+        {/* Left: Segmented Display Mode Switcher */}
+        <div className="pointer-events-auto bg-[#121214]/95 backdrop-blur-md border border-zinc-800 p-1 rounded-xl shadow-2xl flex items-center space-x-1 shrink-0">
           <button
             onClick={() => setDisplayMode('investigation')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium flex items-center space-x-1.5 transition ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-sans font-medium flex items-center space-x-1.5 transition ${
               displayMode === 'investigation'
                 ? "bg-zinc-850 text-blue-400 border border-zinc-700 font-bold shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
@@ -804,7 +805,7 @@ export default function GraphCanvas({
             title="Show only incident path, relevant functions, and connected evidence"
           >
             <ShieldAlert size={14} strokeWidth={1.8} className={displayMode === 'investigation' ? 'text-zinc-100' : 'text-zinc-400'} />
-            <span>Investigation</span>
+            <span className="hidden sm:inline">Investigation</span>
             {hasInvestigationPath && (
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
             )}
@@ -812,7 +813,7 @@ export default function GraphCanvas({
 
           <button
             onClick={() => setDisplayMode('overview')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium flex items-center space-x-1.5 transition ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-sans font-medium flex items-center space-x-1.5 transition ${
               displayMode === 'overview'
                 ? "bg-zinc-850 text-blue-400 border border-zinc-700 font-bold shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
@@ -825,7 +826,7 @@ export default function GraphCanvas({
 
           <button
             onClick={() => setDisplayMode('full')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium flex items-center space-x-1.5 transition ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-sans font-medium flex items-center space-x-1.5 transition ${
               displayMode === 'full'
                 ? "bg-zinc-850 text-blue-400 border border-zinc-700 font-bold shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
@@ -837,16 +838,83 @@ export default function GraphCanvas({
           </button>
         </div>
 
-        {/* Namespace & Node Count Pill */}
-        <div className="bg-[#121214]/90 backdrop-blur-md border border-zinc-800 px-3 py-1.5 rounded-xl text-xs font-sans text-zinc-400 flex items-center space-x-2 shadow-lg">
-          <span className="text-zinc-500 font-sans">repo:</span>
-          <span className="text-zinc-200 font-bold font-mono">{activeTenant}</span>
-          <span className="text-zinc-700">|</span>
-          <span>
-            {filteredGraphData.nodes.length} / {graphData.nodes.length} Nodes
-          </span>
-        </div>
+        {/* Right: Search, Filters, Labels, and Zoom Controls */}
+        <div className="pointer-events-auto flex items-center space-x-1.5 shrink-0">
+          
+          {/* Node Search Bar */}
+          <form onSubmit={handleSearchNode} className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search symbol..."
+              className="bg-[#121214] border border-zinc-800 text-xs rounded-lg pl-7 pr-6 py-1.5 text-zinc-200 outline-none focus:border-blue-500 font-sans w-28 sm:w-36 focus:w-44 transition-all shadow-lg"
+            />
+            <Search size={13} strokeWidth={1.8} className="text-zinc-400 absolute left-2 top-2" />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-1.5 top-2 text-zinc-400 hover:text-white"
+              >
+                <X size={12} strokeWidth={1.8} />
+              </button>
+            )}
+          </form>
 
+          {/* Relationship & Filter Drawer Toggle Button */}
+          <button
+            onClick={() => setShowFilterMenu(!showFilterMenu)}
+            className={`h-8 px-2.5 rounded-lg border text-xs font-sans font-medium transition flex items-center space-x-1.5 text-blue-400 ${
+              showFilterMenu
+                ? "bg-zinc-850 border-blue-500/80 font-bold"
+                : "bg-[#121214] border-zinc-800 hover:border-zinc-700"
+            }`}
+            title="Filter relationships and node types"
+          >
+            <Filter size={13} strokeWidth={1.8} className="text-zinc-200" />
+            <span className="hidden md:inline">Filters</span>
+          </button>
+
+          {/* Labels Display Toggle Button */}
+          <button
+            onClick={() => setShowLabels(!showLabels)}
+            className={`h-8 px-2.5 rounded-lg border text-xs font-sans font-medium transition flex items-center space-x-1.5 text-blue-400 ${
+              showLabels
+                ? "bg-zinc-850 border-blue-500/80 font-semibold"
+                : "bg-[#121214] border-zinc-800 hover:border-zinc-700 text-zinc-400"
+            }`}
+            title={showLabels ? "Hide node labels (clean view)" : "Show all node labels"}
+          >
+            <Tag size={13} strokeWidth={1.8} className="text-zinc-200" />
+            <span className="hidden md:inline">Labels</span>
+          </button>
+
+          {/* Zoom Controls */}
+          <div className="flex items-center space-x-0.5 bg-[#121214] border border-zinc-800 p-1 rounded-lg shadow-lg">
+            <button
+              onClick={handleZoomIn}
+              className="p-1 hover:bg-zinc-850 text-zinc-300 hover:text-white rounded transition"
+              title="Zoom In"
+            >
+              <ZoomIn size={14} strokeWidth={1.8} className="text-zinc-300" />
+            </button>
+            <button
+              onClick={handleZoomOut}
+              className="p-1 hover:bg-zinc-850 text-zinc-300 hover:text-white rounded transition"
+              title="Zoom Out"
+            >
+              <ZoomOut size={14} strokeWidth={1.8} className="text-zinc-300" />
+            </button>
+            <button
+              onClick={handleFitView}
+              className="p-1 hover:bg-zinc-850 text-zinc-300 hover:text-white rounded transition"
+              title="Fit to Screen"
+            >
+              <Maximize2 size={14} strokeWidth={1.8} className="text-zinc-300" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ================= 2. ACTIVE FOCUS BANNER ================= */}
@@ -865,84 +933,6 @@ export default function GraphCanvas({
           </button>
         </div>
       )}
-
-      {/* ================= 3. FLOATING CANVAS CONTROLS (TOP RIGHT) ================= */}
-      <div className="absolute top-3.5 right-4 z-10 flex items-center space-x-2">
-        
-        {/* Node Search Bar */}
-        <form onSubmit={handleSearchNode} className="relative">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search function / symbol..."
-            className="bg-[#121214] border border-zinc-800 text-xs rounded-lg pl-8 pr-7 py-1.5 text-zinc-200 outline-none focus:border-blue-500 font-sans w-48 shadow-lg"
-          />
-          <Search size={15} strokeWidth={1.8} className="text-zinc-300 absolute left-2.5 top-2" />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2 top-2 text-zinc-300 hover:text-white"
-            >
-              <X size={14} strokeWidth={1.8} className="text-zinc-300" />
-            </button>
-          )}
-        </form>
-
-        {/* Relationship & Filter Drawer Toggle Button */}
-        <button
-          onClick={() => setShowFilterMenu(!showFilterMenu)}
-          className={`h-8 px-2.5 rounded-lg border text-xs font-sans font-medium transition flex items-center space-x-1.5 text-blue-400 ${
-            showFilterMenu
-              ? "bg-zinc-850 border-blue-500/80 font-bold"
-              : "bg-[#121214] border-zinc-800 hover:border-zinc-700"
-          }`}
-          title="Filter relationships and node types"
-        >
-          <Filter size={14} strokeWidth={1.8} className="text-zinc-200" />
-          <span>Filters</span>
-        </button>
-
-        {/* Labels Display Toggle Button */}
-        <button
-          onClick={() => setShowLabels(!showLabels)}
-          className={`h-8 px-2.5 rounded-lg border text-xs font-sans font-medium transition flex items-center space-x-1.5 text-blue-400 ${
-            showLabels
-              ? "bg-zinc-850 border-blue-500/80 font-semibold"
-              : "bg-[#121214] border-zinc-800 hover:border-zinc-700 text-zinc-400"
-          }`}
-          title={showLabels ? "Hide node labels (clean view)" : "Show all node labels"}
-        >
-          <Tag size={13} strokeWidth={1.8} className="text-zinc-200" />
-          <span>Labels</span>
-        </button>
-
-        {/* Zoom Controls */}
-        <div className="flex items-center space-x-1 bg-[#121214] border border-zinc-800 p-1 rounded-lg shadow-lg">
-          <button
-            onClick={handleZoomIn}
-            className="p-1 hover:bg-zinc-850 text-zinc-300 hover:text-white rounded transition"
-            title="Zoom In"
-          >
-            <ZoomIn size={16} strokeWidth={1.8} className="text-zinc-300" />
-          </button>
-          <button
-            onClick={handleZoomOut}
-            className="p-1 hover:bg-zinc-850 text-zinc-300 hover:text-white rounded transition"
-            title="Zoom Out"
-          >
-            <ZoomOut size={16} strokeWidth={1.8} className="text-zinc-300" />
-          </button>
-          <button
-            onClick={handleFitView}
-            className="p-1 hover:bg-zinc-850 text-zinc-300 hover:text-white rounded transition"
-            title="Fit to Screen"
-          >
-            <Maximize2 size={16} strokeWidth={1.8} className="text-zinc-300" />
-          </button>
-        </div>
-      </div>
 
       {/* ================= 4. FILTER POPOVER MENU ================= */}
       {showFilterMenu && (

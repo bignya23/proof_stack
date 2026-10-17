@@ -36,9 +36,12 @@ def resolve_repo_dir(tenant_id: str = "sample-fintech") -> Path:
     backend = Path(__file__).resolve().parent
 
     candidates = [
+        root / "repos" / tenant_id,
+        root / "repos" / tenant_id.replace("-", "_"),
         root / f"{tenant_id.replace('-', '_')}_repo",
         root / "sample_fintech_repo",
         root / tenant_id,
+        backend / "repos" / tenant_id,
         backend / f"{tenant_id.replace('-', '_')}_repo",
         backend / "sample_fintech_repo",
     ]

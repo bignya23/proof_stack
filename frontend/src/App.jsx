@@ -265,9 +265,44 @@ export default function App() {
     setActiveTabId(tabId);
   };
 
+  const handleOpenDiffTab = (patchData) => {
+    const currentPatch = patchData || investigationResult?.patch;
+    if (!currentPatch) return;
+    const filePath = currentPatch.file_path || 'patch';
+    const tabId = `diff:${filePath}`;
+    setOpenTabs(prev => {
+      const exists = prev.find(t => t.id === tabId);
+      if (exists) {
+        return prev.map(t => t.id === tabId ? { 
+          ...t, 
+          diff: currentPatch.diff, 
+          commitMessage: currentPatch.commit_message,
+          explanation: currentPatch.explanation 
+        } : t);
+      }
+      return [
+        ...prev,
+        {
+          id: tabId,
+          title: `${filePath.split('/').pop()} (Diff)`,
+          type: 'diff',
+          filePath: filePath,
+          diff: currentPatch.diff,
+          explanation: currentPatch.explanation,
+          commitMessage: currentPatch.commit_message,
+          closable: true
+        }
+      ];
+    });
+    setActiveTabId(tabId);
+  };
+
   const handleOpenCommitTab = () => {
     setActiveActivityView('git');
     setIsSidebarOpen(true);
+    if (investigationResult?.patch?.diff) {
+      handleOpenDiffTab(investigationResult.patch);
+    }
   };
 
   const abortControllerRef = useRef(null);
@@ -451,7 +486,7 @@ export default function App() {
     }
   };
 
-  const handleApplyPatch = async () => {
+  const handleApplyPatch = async (customCommitMessage) => {
     if (!investigationResult?.patch) return;
     setPatchApplying(true);
     try {
@@ -462,7 +497,9 @@ export default function App() {
           tenant_id: activeTenant,
           file_path: investigationResult.patch.file_path,
           patch_diff: investigationResult.patch.diff,
-          commit_message: investigationResult.patch.commit_message
+          commit_message: (typeof customCommitMessage === 'string' && customCommitMessage.trim()) 
+            ? customCommitMessage.trim() 
+            : investigationResult.patch.commit_message
         })
       });
       const data = await res.json();
@@ -515,6 +552,8 @@ export default function App() {
         isRightPanelOpen={isRightPanelOpen}
         setIsRightPanelOpen={setIsRightPanelOpen}
         isStreaming={isStreaming}
+        onIngestRepo={handleIngest}
+        fetchTenants={fetchTenants}
       />
 
       {/* 2. MAIN APPLICATION WORKBENCH */}
@@ -548,6 +587,8 @@ export default function App() {
             evidenceList={investigationResult?.evidence_registry || []}
             onSelectEvidence={handleSelectNodeByName}
             patch={investigationResult?.patch}
+            onOpenDiff={handleOpenDiffTab}
+            onDiscardPatch={() => setInvestigationResult(prev => prev ? { ...prev, patch: null } : null)}
             onApplyPatch={handleApplyPatch}
             isApplyingPatch={patchApplying}
             appliedInfo={patchAppliedInfo}

@@ -3,7 +3,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { 
   Network, FileCode, Database, X, ChevronUp, 
-  ChevronDown, Terminal, RefreshCw, CircleCheck 
+  ChevronDown, Terminal, RefreshCw, CircleCheck, GitPullRequest 
 } from 'lucide-react';
 
 import GraphCanvas from './GraphCanvas';
@@ -125,6 +125,7 @@ export default function CentralWorkspace({
               {tab.type === 'graph' && <Network size={16} strokeWidth={1.8} className="text-zinc-200" />}
               {tab.type === 'file' && <FileCode size={16} strokeWidth={1.8} className="text-zinc-200" />}
               {tab.type === 'evidence' && <Database size={16} strokeWidth={1.8} className="text-zinc-200" />}
+              {tab.type === 'diff' && <GitPullRequest size={16} strokeWidth={1.8} className="text-amber-400" />}
               
               <span className="truncate max-w-[140px]">{tab.title}</span>
 
@@ -235,6 +236,55 @@ export default function CentralWorkspace({
               onSelectNode={onSelectNodeByName}
               highlightedNodes={highlightedNodes}
             />
+          </div>
+        )}
+
+        {/* DIFF VIEWER (Unified Diff / Working Tree Changes) */}
+        {activeTab?.type === 'diff' && (
+          <div className="flex-1 h-full flex flex-col bg-[#000000]">
+            {/* Diff Header Bar */}
+            <div className="px-4 py-2 bg-[#09090b] border-b border-zinc-800 flex items-center justify-between text-xs font-sans shrink-0">
+              <div className="flex items-center space-x-2.5 truncate">
+                <span className="font-semibold text-zinc-200 font-mono">
+                  {activeTab.filePath || activePatch?.file_path || 'Patch Diff'}
+                </span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 font-mono">
+                  MODIFIED (M)
+                </span>
+                {(activeTab.commitMessage || activePatch?.commit_message) && (
+                  <span className="text-zinc-500 truncate max-w-md hidden md:inline text-[11px] font-sans">
+                    {activeTab.commitMessage || activePatch?.commit_message}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center space-x-2 shrink-0">
+                {(activeTab.explanation || activePatch?.explanation) && (
+                  <span className="text-zinc-400 text-[11px] truncate max-w-sm hidden lg:inline" title={activeTab.explanation || activePatch?.explanation}>
+                    {activeTab.explanation || activePatch?.explanation}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Monaco Diff Code Viewer */}
+            <div className="flex-1 relative overflow-hidden">
+              <Editor
+                height="100%"
+                language="diff"
+                theme="vs-dark"
+                value={activeTab.diff || activePatch?.diff || "# No diff generated."}
+                options={{
+                  readOnly: true,
+                  minimap: { enabled: false },
+                  fontSize: 12,
+                  fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                  lineNumbers: "on",
+                  scrollBeyondLastLine: false,
+                  renderLineHighlight: "all",
+                  folding: true,
+                }}
+              />
+            </div>
           </div>
         )}
 
