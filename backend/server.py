@@ -59,8 +59,8 @@ app.add_middleware(
 
 class InvestigatePayload(BaseModel):
     prompt: Optional[str] = "Checkout is failing with 504 timeouts. Investigate decrypt_card_token and fix it."
-    function_name: Optional[str] = "decrypt_card_token"
-    entrypoint_fn: Optional[str] = "post_checkout_endpoint"
+    function_name: Optional[str] = None
+    entrypoint_fn: Optional[str] = None
     tenant_id: str = "sample-fintech"
     persist_new_memory: bool = True
 
@@ -329,6 +329,286 @@ def ingest_any_local_or_github_repo(req: IngestPayload):
     finally:
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _detect_language(file_name: str) -> str:
+    ext = Path(file_name).suffix.lower()
+    mapping = {
+        ".py": "python",
+        ".js": "javascript",
+        ".jsx": "javascript",
+        ".ts": "typescript",
+        ".tsx": "typescript",
+        ".json": "json",
+        ".md": "markdown",
+        ".sh": "shell",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+        ".html": "html",
+        ".css": "css",
+        ".sql": "sql",
+    }
+    return mapping.get(ext, "plaintext")
+
+
+@app.get("/api/repositories/{tenant_id}/tree")
+def get_repository_tree(tenant_id: str):
+    """
+    [Repository File Explorer - Track 1 Connected Codebase]
+    Returns tree of folders, files, programming languages, and FalkorDB indexing status,
+    anchored to the specific repository snapshot and commit currently analyzed.
+    """
+    repo_dir = resolve_repo_dir(tenant_id)
+    if not repo_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Repository {tenant_id} not found at {repo_dir}")
+
+    # 1. Get HEAD commit information
+    commit_info = {
+        "sha": "unknown",
+        "short_sha": "HEAD",
+        "message": "Repository snapshot",
+        "author": "Codebase Owner",
+        "date": "current"
+    }
+    try:
+        git_log = subprocess.check_output(
+            ["git", "log", "-n", "1", "--format=%H|%h|%s|%an|%ad", "--date=short"],
+            cwd=str(repo_dir),
+            stderr=subprocess.DEVNULL
+        ).decode("utf-8").strip()
+        if git_log:
+            parts = git_log.split("|")
+            commit_info = {
+                "sha": parts[0],
+                "short_sha": parts[1] if len(parts) > 1 else parts[0][:7],
+                "message": parts[2] if len(parts) > 2 else "",
+                "author": parts[3] if len(parts) > 3 else "",
+                "date": parts[4] if len(parts) > 4 else ""
+            }
+    except Exception as e:
+        print(f"[!] git log error: {e}")
+
+    # 2. Query FalkorDB for indexed modules and functions
+    indexed_modules = set()
+    file_symbols_map = {}
+    total_symbols = 0
+
+    try:
+        g = get_repo_graph(tenant_id)
+        # Fetch indexed modules
+        mod_res = g.query("MATCH (m:Module) RETURN m.name, m.path")
+        for row in mod_res.result_set:
+            if row[0]:
+                indexed_modules.add(str(row[0]))
+            if row[1]:
+                indexed_modules.add(str(row[1]))
+
+        # Fetch indexed functions
+        fn_res = g.query("MATCH (fn:Function) RETURN fn.name, fn.file, fn.lineno, fn.loc, fn.qname, fn.docstring")
+        for row in fn_res.result_set:
+            fn_name, fn_file, lineno, loc, qname, doc = row[0], row[1] or "", row[2], row[3], row[4], row[5]
+            file_key = Path(fn_file).name
+            if file_key not in file_symbols_map:
+                file_symbols_map[file_key] = []
+            file_symbols_map[file_key].append({
+                "name": fn_name,
+                "kind": "function",
+                "lineno": lineno or 1,
+                "loc": loc or 1,
+                "qname": qname or fn_name,
+                "docstring": (doc or "").strip()[:100],
+                "indexed": True
+            })
+            total_symbols += 1
+    except Exception as e:
+        print(f"[!] FalkorDB tree query error: {e}")
+
+    # 3. Walk repository files and build hierarchical tree for React Arborist
+    ignored_patterns = {".git", "__pycache__", ".pytest_cache", ".DS_Store", "node_modules", ".venv", "venv"}
+    
+    file_items = []
+    language_counts = {}
+    total_indexed_files = 0
+    total_files = 0
+
+    for item in sorted(repo_dir.rglob("*")):
+        if any(ign in item.parts for ign in ignored_patterns):
+            continue
+        if item.is_file():
+            total_files += 1
+            rel_path = str(item.relative_to(repo_dir))
+            lang = _detect_language(item.name)
+            language_counts[lang] = language_counts.get(lang, 0) + 1
+            
+            is_indexed = (item.name in indexed_modules) or (rel_path in indexed_modules)
+            if is_indexed:
+                total_indexed_files += 1
+
+            symbols = file_symbols_map.get(item.name, [])
+
+            # Count lines
+            line_count = 0
+            try:
+                line_count = sum(1 for _ in item.open(encoding="utf-8", errors="ignore"))
+            except Exception:
+                pass
+
+            file_items.append({
+                "id": f"file:{rel_path}",
+                "name": item.name,
+                "path": rel_path,
+                "type": "file",
+                "language": lang,
+                "size_bytes": item.stat().st_size,
+                "lines_count": line_count,
+                "indexed": is_indexed,
+                "symbols": symbols,
+            })
+
+    # Group into folder structure for React Arborist
+    root_nodes = []
+    dir_map = {}
+
+    for f in file_items:
+        parts = Path(f["path"]).parts
+        if len(parts) == 1:
+            root_nodes.append(f)
+        else:
+            curr_path = ""
+            parent_list = root_nodes
+            for part in parts[:-1]:
+                curr_path = f"{curr_path}/{part}" if curr_path else part
+                dir_id = f"dir:{curr_path}"
+                if dir_id not in dir_map:
+                    dir_node = {
+                        "id": dir_id,
+                        "name": part,
+                        "path": curr_path,
+                        "type": "directory",
+                        "children": []
+                    }
+                    dir_map[dir_id] = dir_node
+                    parent_list.append(dir_node)
+                parent_list = dir_map[dir_id]["children"]
+            parent_list.append(f)
+
+    return {
+        "repository": tenant_id,
+        "repo_path": str(repo_dir),
+        "current_commit": commit_info,
+        "tree": root_nodes,
+        "files_flat": file_items,
+        "stats": {
+            "total_files": total_files,
+            "indexed_files": total_indexed_files,
+            "total_symbols": total_symbols,
+            "languages": language_counts,
+            "indexing_status": f"{int((total_indexed_files / max(1, total_files)) * 100)}% FalkorDB Synced",
+        }
+    }
+
+
+@app.get("/api/repositories/{tenant_id}/files")
+def get_repository_file(tenant_id: str, path: str):
+    """
+    [Monaco Editor Source Viewer]
+    Fetches the syntax-highlighted source code for the requested path,
+    along with line ranges for indexed FalkorDB symbols.
+    """
+    repo_dir = resolve_repo_dir(tenant_id)
+    clean_path = path.replace("sample_fintech_repo/", "").lstrip("/")
+    target_file = (repo_dir / clean_path).resolve()
+
+    if not target_file.exists() or not str(target_file).startswith(str(repo_dir)):
+        raise HTTPException(status_code=404, detail=f"File {clean_path} not found in repository {tenant_id}")
+
+    try:
+        content = target_file.read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read file: {e}")
+
+    # Query FalkorDB for symbols in this file
+    symbols = []
+    try:
+        g = get_repo_graph(tenant_id)
+        cypher = """
+        MATCH (fn:Function)
+        WHERE fn.file CONTAINS $filename OR fn.file = $rel_path
+        RETURN fn.name, fn.lineno, fn.loc, fn.qname, fn.docstring
+        ORDER BY fn.lineno ASC
+        """
+        res = g.query(cypher, {"filename": target_file.name, "rel_path": clean_path})
+        for r in res.result_set:
+            symbols.append({
+                "name": r[0],
+                "lineno": r[1] or 1,
+                "loc": r[2] or 1,
+                "qname": r[3] or r[0],
+                "docstring": r[4] or "",
+                "indexed": True
+            })
+    except Exception as e:
+        print(f"[!] Cypher symbol query error: {e}")
+
+    return {
+        "repository": tenant_id,
+        "path": clean_path,
+        "filename": target_file.name,
+        "content": content,
+        "language": _detect_language(target_file.name),
+        "lines_count": len(content.splitlines()),
+        "symbols": symbols
+    }
+
+
+@app.get("/api/repositories/{tenant_id}/commits")
+def get_repository_commits(tenant_id: str, limit: int = 20):
+    """
+    [VS Code Source Control Sidebar]
+    Returns list of Git commits from the repository snapshot with message, sha, author, and date.
+    """
+    repo_dir = resolve_repo_dir(tenant_id)
+    commits = []
+    try:
+        git_log = subprocess.check_output(
+            ["git", "log", f"-n{limit}", "--format=%H|%h|%s|%an|%ad", "--date=short"],
+            cwd=str(repo_dir),
+            stderr=subprocess.DEVNULL
+        ).decode("utf-8").strip()
+        if git_log:
+            for line in git_log.splitlines():
+                parts = line.split("|")
+                if len(parts) >= 5:
+                    commits.append({
+                        "sha": parts[0],
+                        "short_sha": parts[1],
+                        "message": parts[2],
+                        "author": parts[3],
+                        "date": parts[4],
+                    })
+    except Exception as e:
+        print(f"[!] git commits error: {e}")
+
+    if not commits:
+        try:
+            g = get_repo_graph(tenant_id)
+            res = g.query("MATCH (c:Commit) RETURN c.sha, c.message, c.decision_tag ORDER BY c.timestamp DESC LIMIT 10")
+            for r in res.result_set:
+                commits.append({
+                    "sha": r[0] or "unknown",
+                    "short_sha": (r[0] or "")[:7] or "commit",
+                    "message": r[1] or "Commit",
+                    "decision_tag": r[2] or "",
+                    "author": "Engineer",
+                    "date": "recent"
+                })
+        except Exception:
+            pass
+
+    return {
+        "repository": tenant_id,
+        "commits": commits
+    }
 
 
 if __name__ == "__main__":

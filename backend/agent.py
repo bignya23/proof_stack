@@ -454,7 +454,7 @@ def execute_deterministic_reasoner(
     # Step 1 — Symbol resolution (mandatory first step — anchors to real graph node)
     r_sym = _trace(
         "mcp_find_symbol",
-        "Track 01: Symbol Resolution",
+        "Track 1: MCP Symbol Resolution",
         f"Resolved incident mention of '{target_fn}' to an exact FalkorDB graph node",
         mcp_find_symbol(target_fn, tenant_id),
         "SymbolResolverAgent",
@@ -463,7 +463,7 @@ def execute_deterministic_reasoner(
     # Step 2 — Episodic memory recall
     r_mem = _trace(
         "mcp_recall_episodic_memory",
-        "Track 02: Memory & Coordination",
+        "Track 1: Graph Incident Memory",
         f"Recalled prior incident memories attached to '{target_fn}'",
         mcp_recall_episodic_memory(target_fn, tenant_id),
         "EpisodicMemoryAgent",
@@ -472,7 +472,7 @@ def execute_deterministic_reasoner(
     # Step 3 — Shortest execution path (graph-derived, never invented)
     r_path = _trace(
         "mcp_shortest_execution_path",
-        "Track 01: Graph Algorithms as Tools",
+        "Track 1: Multi-Hop shortestPath",
         f"FalkorDB shortestPath from '{entrypoint_fn}' to '{target_fn}' (actual Cypher result)",
         mcp_shortest_execution_path(entrypoint_fn, target_fn, tenant_id),
         "GraphPathAgent",
@@ -481,7 +481,7 @@ def execute_deterministic_reasoner(
     # Step 4 — AST blast radius
     r_blast = _trace(
         "mcp_ast_blast_radius",
-        "Track 01: Connected Data",
+        "Track 1: Multi-Hop Blast Radius",
         f"Multi-hop [:CALLS*1..5] blast radius for '{target_fn}'",
         mcp_ast_blast_radius(target_fn, tenant_id),
         "ASTBlastRadiusAgent",
@@ -491,7 +491,7 @@ def execute_deterministic_reasoner(
     # Step 5 — PageRank structural risk (conditional on blast radius)
     r_pr = _trace(
         "mcp_pagerank_hotspots",
-        "Track 01: Native FalkorDB Algos",
+        "Track 1: GraphBLAS PageRank",
         "FalkorDB native algo.pageRank (GraphBLAS) structural risk ranking",
         mcp_pagerank_hotspots(tenant_id),
         "GraphAlgorithmAgent",
@@ -500,7 +500,7 @@ def execute_deterministic_reasoner(
     # Step 6 — Company brain provenance
     r_prov = _trace(
         "mcp_company_brain_provenance",
-        "Track 03: Company Brain",
+        "Track 1: Explainable Provenance",
         f"Traced author and governing ADR/INC tag for '{target_fn}'",
         mcp_company_brain_provenance(target_fn, tenant_id),
         "CompanyBrainAgent",
@@ -512,7 +512,7 @@ def execute_deterministic_reasoner(
     # Step 7 — Read actual source code
     r_code = _trace(
         "mcp_read_code_file",
-        "Track 01: Code Intelligence",
+        "Track 1: Code Invariant Inspection",
         "Inspected vault_client.py source to verify implementation before patch generation",
         mcp_read_code_file("vault_client.py", tenant_id),
         "CodeInspectionAgent",
@@ -536,7 +536,7 @@ def execute_deterministic_reasoner(
 
     r_write = _trace(
         "mcp_write_episodic_memory",
-        "Track 02: Shared Multi-Agent State",
+        "Track 1: Graph-Driven Action",
         "Persisted synthesised triage decision into FalkorDB for future sessions",
         mcp_write_episodic_memory(
             function_name=target_fn,
@@ -696,13 +696,21 @@ def _extract_evidence_from_result(tool_name: str, result: dict) -> Optional[dict
 
 
 def _track_badge_for(fn_name: str) -> str:
-    if "memory" in fn_name:
-        return "Track 02: Memory & Coordination"
+    if "pagerank" in fn_name:
+        return "Track 1: GraphBLAS PageRank"
+    if "shortest" in fn_name:
+        return "Track 1: Multi-Hop shortestPath"
+    if "blast_radius" in fn_name:
+        return "Track 1: Multi-Hop Blast Radius"
     if "provenance" in fn_name:
-        return "Track 03: Company Brain"
-    if "pagerank" in fn_name or "shortest" in fn_name:
-        return "Track 01: Native FalkorDB Algos"
-    return "Track 01: Connected Data"
+        return "Track 1: Explainable Provenance"
+    if "memory" in fn_name:
+        return "Track 1: Graph Incident Memory"
+    if "find_symbol" in fn_name:
+        return "Track 1: MCP Symbol Resolution"
+    if "read_code" in fn_name:
+        return "Track 1: Code Invariant Inspection"
+    return "Track 1: Connected Data"
 
 
 def run_llm_mcp_agent(
@@ -910,49 +918,49 @@ def _stream_deterministic_reasoner(
     steps = [
         (
             "mcp_find_symbol",
-            "Track 01: Symbol Resolution",
+            "Track 1: MCP Symbol Resolution",
             f"Resolving incident mention of '{target_fn}' to an exact FalkorDB node",
             "SymbolResolverAgent",
             lambda: mcp_find_symbol(target_fn, tenant_id),
         ),
         (
             "mcp_recall_episodic_memory",
-            "Track 02: Memory & Coordination",
+            "Track 1: Graph Incident Memory",
             f"Recalling prior incident memories attached to '{target_fn}'",
             "EpisodicMemoryAgent",
             lambda: mcp_recall_episodic_memory(target_fn, tenant_id),
         ),
         (
             "mcp_shortest_execution_path",
-            "Track 01: Graph Algorithms as Tools",
+            "Track 1: Multi-Hop shortestPath",
             f"FalkorDB openCypher shortestPath from '{entrypoint_fn}' to '{target_fn}'",
             "GraphPathAgent",
             lambda: mcp_shortest_execution_path(entrypoint_fn, target_fn, tenant_id),
         ),
         (
             "mcp_ast_blast_radius",
-            "Track 01: Connected Data",
+            "Track 1: Multi-Hop Blast Radius",
             f"Multi-hop [:CALLS*1..5] blast radius for '{target_fn}'",
             "ASTBlastRadiusAgent",
             lambda: mcp_ast_blast_radius(target_fn, tenant_id),
         ),
         (
             "mcp_pagerank_hotspots",
-            "Track 01: Native FalkorDB Algos",
+            "Track 1: GraphBLAS PageRank",
             "FalkorDB native algo.pageRank (GraphBLAS) structural risk ranking",
             "GraphAlgorithmAgent",
             lambda: mcp_pagerank_hotspots(tenant_id),
         ),
         (
             "mcp_company_brain_provenance",
-            "Track 03: Company Brain",
+            "Track 1: Explainable Provenance",
             f"Tracing author and governing ADR/INC tag for '{target_fn}'",
             "CompanyBrainAgent",
             lambda: mcp_company_brain_provenance(target_fn, tenant_id),
         ),
         (
             "mcp_read_code_file",
-            "Track 01: Code Intelligence",
+            "Track 1: Code Invariant Inspection",
             "Inspecting vault_client.py source to verify implementation invariants",
             "CodeInspectionAgent",
             lambda: mcp_read_code_file("vault_client.py", tenant_id),
@@ -1039,7 +1047,7 @@ def _stream_deterministic_reasoner(
         "step": step_num,
         "tool_name": "mcp_write_episodic_memory",
         "agent_name": "CoordinatorStateAgent",
-        "track_badge": "Track 02: Shared Multi-Agent State",
+        "track_badge": "Track 1: Graph-Driven Action",
         "purpose": "Persisting synthesised triage decision into FalkorDB episodic memory",
     }
     time.sleep(0.12)
