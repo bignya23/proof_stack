@@ -3,17 +3,30 @@ import os
 import shutil
 import subprocess
 import tempfile
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+# Ensure backend directory is in sys.path regardless of CWD
+_BACKEND_DIR = str(Path(__file__).resolve().parent)
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+import json
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from agent import apply_diff_patch, get_llm_client, run_llm_mcp_agent
+from agent import (
+    apply_diff_patch,
+    get_llm_client,
+    run_llm_mcp_agent,
+    stream_agent_investigation,
+)
 from ingest_repo import ingest_repo_to_falkordb
 from mcp_tools import db, get_repo_graph, resolve_repo_dir
 
@@ -147,6 +160,54 @@ def execute_multi_agent_investigation(req: InvestigatePayload):
         function_name=req.function_name,
         entrypoint_fn=req.entrypoint_fn,
     )
+
+
+def _generate_sse_events(req: InvestigatePayload):
+    for event in stream_agent_investigation(
+        prompt=req.prompt or f"Investigate {req.function_name} and generate patch",
+        tenant_id=req.tenant_id,
+        function_name=req.function_name,
+        entrypoint_fn=req.entrypoint_fn,
+    ):
+        yield f"data: {json.dumps(event)}\n\n"
+
+
+@app.post("/api/investigate/stream")
+@app.post("/api/agent/investigate/stream")
+def stream_investigation_endpoint(req: InvestigatePayload):
+    """
+    [Streaming ReAct Loop via SSE]
+    Streams live step-by-step thinking, dynamic MCP tool calls, FalkorDB Cypher execution,
+    and patch synthesis in real time.
+    """
+    return StreamingResponse(
+        _generate_sse_events(req),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/api/investigate/stream")
+@app.get("/api/agent/investigate/stream")
+def stream_investigation_get(
+    prompt: Optional[str] = "Checkout is failing with 504 timeouts. Investigate decrypt_card_token and fix it.",
+    function_name: Optional[str] = "decrypt_card_token",
+    entrypoint_fn: Optional[str] = "post_checkout_endpoint",
+    tenant_id: str = "sample-fintech",
+):
+    """GET endpoint variant for browser EventSource or curl testing."""
+    payload = InvestigatePayload(
+        prompt=prompt,
+        function_name=function_name,
+        entrypoint_fn=entrypoint_fn,
+        tenant_id=tenant_id,
+    )
+    return stream_investigation_endpoint(payload)
+
 
 
 @app.post("/api/patch/apply")
