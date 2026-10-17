@@ -122,9 +122,9 @@ export default function CentralWorkspace({
                   : "bg-[#09090b] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40"
               }`}
             >
-              {tab.type === 'graph' && <Network size={16} strokeWidth={1.8} className="text-blue-400" />}
-              {tab.type === 'file' && <FileCode size={16} strokeWidth={1.8} className="text-blue-400" />}
-              {tab.type === 'evidence' && <Database size={16} strokeWidth={1.8} className="text-blue-400" />}
+              {tab.type === 'graph' && <Network size={16} strokeWidth={1.8} className="text-zinc-200" />}
+              {tab.type === 'file' && <FileCode size={16} strokeWidth={1.8} className="text-zinc-200" />}
+              {tab.type === 'evidence' && <Database size={16} strokeWidth={1.8} className="text-zinc-200" />}
               
               <span className="truncate max-w-[140px]">{tab.title}</span>
 
@@ -134,7 +134,7 @@ export default function CentralWorkspace({
                     e.stopPropagation();
                     onCloseTab(tab.id);
                   }}
-                  className="p-0.5 rounded hover:bg-zinc-800 text-zinc-500 hover:text-blue-400"
+                  className="p-0.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100"
                 >
                   <X size={14} strokeWidth={1.8} />
                 </button>
@@ -147,8 +147,11 @@ export default function CentralWorkspace({
       {/* ================= 2. MAIN VIEWER CONTENT ================= */}
       <div className="flex-1 relative overflow-hidden">
         
-        {/* GRAPH CANVAS VIEW */}
-        {activeTab?.type === 'graph' && (
+        {/* GRAPH CANVAS VIEW (Kept mounted to preserve zoom, pan, camera, and physics simulation layout) */}
+        <div 
+          className={`h-full w-full ${activeTab?.type === 'graph' ? 'block' : 'hidden'}`}
+          style={{ display: activeTab?.type === 'graph' ? 'block' : 'none' }}
+        >
           <GraphCanvas 
             graphData={graphData}
             activeTenant={activeTenant}
@@ -157,7 +160,7 @@ export default function CentralWorkspace({
             selectedNode={selectedNode}
             setSelectedNode={setSelectedNode}
           />
-        )}
+        </div>
 
         {/* MONACO CODE EDITOR VIEW */}
         {activeTab?.type === 'file' && (
@@ -193,7 +196,7 @@ export default function CentralWorkspace({
             <div className="flex-1 relative overflow-hidden">
               {fileLoading ? (
                 <div className="h-full flex items-center justify-center text-xs text-zinc-400 space-x-2">
-                  <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" />
+                  <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-zinc-300" />
                   <span>Loading source file...</span>
                 </div>
               ) : fileContent ? (
@@ -248,17 +251,17 @@ export default function CentralWorkspace({
           className="h-7 px-3 flex items-center justify-between text-xs font-mono text-zinc-400 cursor-pointer hover:bg-zinc-900/50 select-none shrink-0"
         >
           <div className="flex items-center space-x-2">
-            <Terminal size={16} strokeWidth={1.8} className="text-blue-400" />
+            <Terminal size={16} strokeWidth={1.8} className="text-zinc-200" />
             <span className="font-bold text-zinc-200">Terminal & Console</span>
             {isStreaming && (
-              <span className="flex items-center space-x-1 text-blue-400">
-                <RefreshCw size={14} strokeWidth={1.8} className="animate-spin text-blue-400" />
+              <span className="flex items-center space-x-1 text-zinc-300">
+                <RefreshCw size={14} strokeWidth={1.8} className="animate-spin text-zinc-200" />
                 <span className="text-[10px]">Turn {liveTurn} Deliberating</span>
               </span>
             )}
             {!isStreaming && streamingTrace.length > 0 && (
               <span className="text-[10px] text-zinc-400 flex items-center space-x-1">
-                <CircleCheck size={14} strokeWidth={1.8} className="text-blue-400" />
+                <CircleCheck size={14} strokeWidth={1.8} className="text-zinc-200" />
                 <span>{streamingTrace.length} Steps Executed</span>
               </span>
             )}
@@ -269,9 +272,9 @@ export default function CentralWorkspace({
               {liveThinkingMessage || "Ready"}
             </span>
             {isConsoleOpen ? (
-              <ChevronDown size={16} strokeWidth={1.8} className="text-zinc-500" />
+              <ChevronDown size={16} strokeWidth={1.8} className="text-zinc-400" />
             ) : (
-              <ChevronUp size={16} strokeWidth={1.8} className="text-zinc-500" />
+              <ChevronUp size={16} strokeWidth={1.8} className="text-zinc-400" />
             )}
           </div>
         </div>

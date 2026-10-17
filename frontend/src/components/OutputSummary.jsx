@@ -20,7 +20,7 @@ export default function OutputSummary({
       {/* Top Header */}
       <div className="flex items-center justify-between text-xs font-semibold text-zinc-300">
         <div className="flex items-center space-x-1.5">
-          <ShieldAlert size={16} strokeWidth={1.8} className="text-blue-400" />
+          <ShieldAlert size={16} strokeWidth={1.8} className="text-zinc-200" />
           <span className="text-zinc-100 font-bold tracking-tight">Root Cause & Remediation</span>
         </div>
         {synthesis.governing_adr && (
@@ -40,7 +40,7 @@ export default function OutputSummary({
         <div className="p-2.5 bg-[#000000] rounded-lg border border-zinc-800 space-y-1.5">
           <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono">
             <span className="flex items-center space-x-1 text-zinc-300 font-semibold">
-              <Network size={14} strokeWidth={1.8} className="text-blue-400" />
+              <Network size={14} strokeWidth={1.8} className="text-zinc-200" />
               <span>Route ({nodes.length} Hops)</span>
             </span>
           </div>
@@ -66,7 +66,7 @@ export default function OutputSummary({
                     {nodeFile && <span className="text-zinc-500 text-[9px]">({nodeFile})</span>}
                   </button>
                   {idx < nodes.length - 1 && (
-                    <ArrowRight size={12} strokeWidth={1.8} className="text-zinc-600 shrink-0" />
+                    <ArrowRight size={12} strokeWidth={1.8} className="text-zinc-400 shrink-0" />
                   )}
                 </React.Fragment>
               );
@@ -78,12 +78,12 @@ export default function OutputSummary({
       {/* Owner & Impact Metadata Grid */}
       <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-800 text-[11px] font-mono">
         <div className="flex items-center space-x-1.5">
-          <User size={14} strokeWidth={1.8} className="text-zinc-500" />
+          <User size={14} strokeWidth={1.8} className="text-zinc-400" />
           <span className="text-zinc-400">Primary Owner:</span>
           <strong className="text-zinc-200">{synthesis.primary_owner || "Aarav Mehta"}</strong>
         </div>
         <div className="flex items-center space-x-1.5">
-          <GitBranch size={14} strokeWidth={1.8} className="text-zinc-500" />
+          <GitBranch size={14} strokeWidth={1.8} className="text-zinc-400" />
           <span className="text-zinc-400">Callers Impacted:</span>
           <strong className="text-zinc-200">{synthesis.upstream_blast_count || 5} Functions</strong>
         </div>

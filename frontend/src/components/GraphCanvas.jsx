@@ -4,7 +4,9 @@ import ForceGraph2D from 'react-force-graph-2d';
 import { 
   ZoomIn, ZoomOut, Maximize2, Search, X, 
   RotateCcw, Info, Database, Layers, Check, Copy,
-  ArrowRight, ExternalLink, Compass, Shield, GitCommit
+  ArrowRight, ExternalLink, Compass, ShieldAlert, GitCommit,
+  Filter, Eye, EyeOff, Target, Network, ChevronDown, ChevronRight,
+  Code2, Sparkles, Sliders, Tag
 } from 'lucide-react';
 
 export default function GraphCanvas({
@@ -17,40 +19,211 @@ export default function GraphCanvas({
   onNodeClick
 }) {
   const fgRef = useRef();
+  const containerRef = useRef(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const isInitialFitDone = useRef(false);
+
+  // Global label display toggle (defaults to true so labels are visible at normal zoom)
+  const [showLabels, setShowLabels] = useState(true);
+
+  // =========================================================================
+  // 1. GRAPH DISPLAY MODES & COLLAPSIBLE MODULES
+  // =========================================================================
+  // Modes: 'investigation' | 'overview' | 'full'
+  const hasInvestigationPath = Boolean(
+    (executionPath?.nodes && executionPath.nodes.length > 0) || 
+    (highlightedNodes && highlightedNodes.size > 0)
+  );
+
+  const [displayMode, setDisplayMode] = useState(
+    hasInvestigationPath ? 'investigation' : 'overview'
+  );
+
+  // Auto-switch to 'investigation' mode only when a NEW agent investigation run completes
+  const prevExecutionPathRef = useRef(null);
+  useEffect(() => {
+    if (executionPath && executionPath !== prevExecutionPathRef.current) {
+      prevExecutionPathRef.current = executionPath;
+      setDisplayMode('investigation');
+      // Smoothly fit view to the newly investigated path
+      setTimeout(() => {
+        if (fgRef.current) fgRef.current.zoomToFit(500, 60);
+      }, 350);
+    }
+  }, [executionPath]);
+
+  // Dynamic ResizeObserver: re-measures visible container when side panels toggle so canvas matches container size
+  // NOTE: Does NOT call zoomToFit so user zoom/pan is never reset when toggling or clicking side panels!
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const measure = () => {
+      if (containerRef.current) {
+        const { clientWidth, clientHeight } = containerRef.current;
+        if (clientWidth > 0 && clientHeight > 0) {
+          setDimensions(prev => {
+            if (prev.width === clientWidth && prev.height === clientHeight) return prev;
+            return { width: clientWidth, height: clientHeight };
+          });
+        }
+      }
+    };
+
+    measure();
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          const w = Math.round(width);
+          const h = Math.round(height);
+          setDimensions(prev => {
+            if (prev.width === w && prev.height === h) return prev;
+            return { width: w, height: h };
+          });
+        }
+      }
+    });
+
+    observer.observe(containerRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  // When a node is selected from sidebar or navigator, gently center on it without resetting zoom
+  const prevSelectedNodeIdRef = useRef(null);
+  useEffect(() => {
+    if (selectedNode && selectedNode.id !== prevSelectedNodeIdRef.current) {
+      prevSelectedNodeIdRef.current = selectedNode.id;
+      if (fgRef.current && selectedNode.x != null && selectedNode.y != null) {
+        fgRef.current.centerAt(selectedNode.x, selectedNode.y, 400);
+      }
+    }
+  }, [selectedNode]);
+
+  // Initial fit ONLY ONCE when graph first mounts and dimensions become available
+  useEffect(() => {
+    if (dimensions.width > 0 && dimensions.height > 0 && !isInitialFitDone.current) {
+      isInitialFitDone.current = true;
+      setTimeout(() => {
+        if (fgRef.current) {
+          fgRef.current.zoomToFit(400, 60);
+        }
+      }, 300);
+    }
+  }, [dimensions]);
+
+  // Collapsed modules state for 'overview' mode and grouping
+  const [expandedModules, setExpandedModules] = useState(new Set());
+  const [groupFunctionsByModule, setGroupFunctionsByModule] = useState(false);
+
+  // =========================================================================
+  // 2. RELATIONSHIP & ENTITY FILTER TOGGLES
+  // =========================================================================
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+
+  // Enabled relationship types (code & git topology)
+  const [enabledRelTypes, setEnabledRelTypes] = useState({
+    CALLS: true,
+    DEFINES: true,
+    AUTHORED: true,
+    MODIFIED: true,
+  });
+
+  // Enabled node entity types (excluding memory nodes)
+  const [enabledNodeTypes, setEnabledNodeTypes] = useState({
+    Function: true,
+    Module: true,
+    Commit: true,
+    Engineer: true,
+  });
+
+  // Quick 1-click Preset: Code Path Only (hides commits & engineers)
+  const applyCodeOnlyFilter = () => {
+    setEnabledRelTypes({
+      CALLS: true,
+      DEFINES: true,
+      AUTHORED: false,
+      MODIFIED: false,
+    });
+    setEnabledNodeTypes({
+      Function: true,
+      Module: true,
+      Commit: false,
+      Engineer: false,
+    });
+  };
+
+  const resetAllFilters = () => {
+    setEnabledRelTypes({
+      CALLS: true,
+      DEFINES: true,
+      AUTHORED: true,
+      MODIFIED: true,
+      RECORDED: true,
+    });
+    setEnabledNodeTypes({
+      Function: true,
+      Module: true,
+      Commit: true,
+      Engineer: true,
+      Finding: true,
+      Session: true,
+    });
+    setFocusedNode(null);
+  };
+
+  // =========================================================================
+  // 3. LOCAL EXPLORATION & NEIGHBORHOOD FOCUS
+  // =========================================================================
+  // focusedNode: { id, name, hops: 1 | 2 }
+  const [focusedNode, setFocusedNode] = useState(null);
+
+  // Canvas search & hover states
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredNode, setHoveredNode] = useState(null);
   const [hoveredLink, setHoveredLink] = useState(null);
   const [copiedId, setCopiedId] = useState(false);
 
-  // Configure d3 force physics for ideal spacing and anti-collision
+  // Physics tuning for balanced layout
   useEffect(() => {
     if (fgRef.current) {
       const linkForce = fgRef.current.d3Force('link');
       if (linkForce) {
         linkForce.distance(link => {
-          if (link.type === 'CALLS') return 100;
-          if (link.type === 'DEFINES') return 70;
-          if (link.type === 'AUTHORED') return 75;
-          return 85;
+          if (link.type === 'CALLS') return 95;
+          if (link.type === 'DEFINES') return 65;
+          if (link.type === 'AUTHORED') return 70;
+          return 80;
         });
       }
       const chargeForce = fgRef.current.d3Force('charge');
       if (chargeForce) {
-        chargeForce.strength(-250); // Strong repulsion prevents clumping
+        chargeForce.strength(-240);
       }
     }
   }, [graphData]);
 
-  // Extract node names and edge transitions for the investigated path
-  const { pathNodeNames, pathEdgeTransitions } = useMemo(() => {
+  // =========================================================================
+  // 4. EXECUTION PATH SEQUENCE & TRANSITIONS
+  // =========================================================================
+  const { pathNodeNames, pathNodeOrder, pathEdgeTransitions } = useMemo(() => {
     const nodeNames = new Set();
+    const nodeOrder = new Map(); // name -> 1-based hop step
     const transitions = new Set();
 
     if (executionPath?.nodes && Array.isArray(executionPath.nodes)) {
       const nodes = executionPath.nodes;
       for (let i = 0; i < nodes.length; i++) {
         const curr = typeof nodes[i] === 'string' ? nodes[i] : nodes[i]?.name;
-        if (curr) nodeNames.add(curr);
+        if (curr) {
+          nodeNames.add(curr);
+          if (!nodeOrder.has(curr)) {
+            nodeOrder.set(curr, i + 1);
+          }
+        }
 
         if (i < nodes.length - 1) {
           const next = typeof nodes[i + 1] === 'string' ? nodes[i + 1] : nodes[i + 1]?.name;
@@ -61,10 +234,10 @@ export default function GraphCanvas({
         }
       }
     }
-    return { pathNodeNames: nodeNames, pathEdgeTransitions: transitions };
+    return { pathNodeNames: nodeNames, pathNodeOrder: nodeOrder, pathEdgeTransitions: transitions };
   }, [executionPath]);
 
-  // Clean, human-readable node name — keeping raw UUIDs and numeric IDs hidden
+  // Human-readable node name
   const getCleanNodeName = (node) => {
     if (!node) return "";
     if (node.label === "Commit") {
@@ -89,6 +262,7 @@ export default function GraphCanvas({
 
   // Check if a node is in the investigated path or highlighted
   const isNodeInvestigated = (node) => {
+    if (!node) return false;
     const name = node.name || node.display_name;
     const id = String(node.id);
     return (
@@ -99,14 +273,13 @@ export default function GraphCanvas({
     );
   };
 
-  // Check if a link is part of the currently investigated execution path
+  // Check if link is in the gold execution path
   const isInvestigatedLink = (link) => {
     const srcName = link.source?.name || link.source?.display_name || link.source;
     const tgtName = link.target?.name || link.target?.display_name || link.target;
     const srcId = String(link.source?.id || link.source);
     const tgtId = String(link.target?.id || link.target);
 
-    // 1. Direct match in execution path consecutive sequence
     if (
       pathEdgeTransitions.has(`${srcName}->${tgtName}`) ||
       pathEdgeTransitions.has(`${tgtName}->${srcName}`) ||
@@ -116,40 +289,149 @@ export default function GraphCanvas({
       return true;
     }
 
-    // 2. Or if both endpoints are highlighted and it's a CALLS relationship
     const isSrcHighlighted = highlightedNodes.has(srcName) || highlightedNodes.has(srcId);
     const isTgtHighlighted = highlightedNodes.has(tgtName) || highlightedNodes.has(tgtId);
-    if (link.type === 'CALLS' && isSrcHighlighted && isTgtHighlighted) {
+    return link.type === 'CALLS' && isSrcHighlighted && isTgtHighlighted;
+  };
+
+  // =========================================================================
+  // 5. LOCAL EXPLORATION NEIGHBORHOOD COMPUTATION
+  // =========================================================================
+  const focusedNeighborhood = useMemo(() => {
+    if (!focusedNode || !graphData?.links) return null;
+    const targetId = String(focusedNode.id);
+    const targetName = focusedNode.name;
+    const neighborIds = new Set([targetId]);
+
+    // Hop 1
+    graphData.links.forEach(l => {
+      const sId = String(l.source?.id || l.source);
+      const tId = String(l.target?.id || l.target);
+      const sName = l.source?.name || l.source?.display_name || sId;
+      const tName = l.target?.name || l.target?.display_name || tId;
+
+      if (sId === targetId || sName === targetName) {
+        neighborIds.add(tId);
+        if (tName) neighborIds.add(tName);
+      }
+      if (tId === targetId || tName === targetName) {
+        neighborIds.add(sId);
+        if (sName) neighborIds.add(sName);
+      }
+    });
+
+    // Hop 2
+    if (focusedNode.hops >= 2) {
+      const hop1Set = new Set(neighborIds);
+      graphData.links.forEach(l => {
+        const sId = String(l.source?.id || l.source);
+        const tId = String(l.target?.id || l.target);
+        const sName = l.source?.name || l.source?.display_name || sId;
+        const tName = l.target?.name || l.target?.display_name || tId;
+
+        if (hop1Set.has(sId) || hop1Set.has(sName)) {
+          neighborIds.add(tId);
+          if (tName) neighborIds.add(tName);
+        }
+        if (hop1Set.has(tId) || hop1Set.has(tName)) {
+          neighborIds.add(sId);
+          if (sName) neighborIds.add(sName);
+        }
+      });
+    }
+
+    return neighborIds;
+  }, [focusedNode, graphData.links]);
+
+  // Check if a node is relevant to the investigated path (investigated or 1-hop neighbor)
+  const isRelevantToInvestigation = useMemo(() => {
+    const relevantIds = new Set();
+    if (!graphData?.nodes || !graphData?.links) return relevantIds;
+
+    // Add all direct path nodes
+    graphData.nodes.forEach(n => {
+      if (isNodeInvestigated(n)) {
+        relevantIds.add(String(n.id));
+        if (n.name) relevantIds.add(n.name);
+      }
+    });
+
+    // Add 1-hop direct neighbors & connected evidence
+    graphData.links.forEach(l => {
+      const sId = String(l.source?.id || l.source);
+      const tId = String(l.target?.id || l.target);
+      const sName = l.source?.name || l.source?.display_name || sId;
+      const tName = l.target?.name || l.target?.display_name || tId;
+
+      if (relevantIds.has(sId) || relevantIds.has(sName)) {
+        relevantIds.add(tId);
+        if (tName) relevantIds.add(tName);
+      }
+      if (relevantIds.has(tId) || relevantIds.has(tName)) {
+        relevantIds.add(sId);
+        if (sName) relevantIds.add(sName);
+      }
+    });
+
+    return relevantIds;
+  }, [graphData, highlightedNodes, pathNodeNames]);
+
+  // =========================================================================
+  // 6. FILTERED & COMPUTED GRAPH DATA (MODES, FILTERS, CLUSTERS)
+  // =========================================================================
+  const filteredGraphData = useMemo(() => {
+    if (!graphData?.nodes || !graphData?.links) {
+      return { nodes: [], links: [] };
+    }
+
+    // Filter nodes by enabled entity types and exclude memory nodes
+    let visibleNodes = graphData.nodes.filter(n => {
+      // Exclude episodic memory nodes from the visual graph
+      if (n.label === 'Finding' || n.label === 'Session' || n.label === 'Memory') return false;
+      if (n.id && (String(n.id).startsWith('mem-') || String(n.id).startsWith('session-'))) return false;
+
+      // Type filter
+      if (enabledNodeTypes[n.label] === false) return false;
       return true;
+    });
+
+    // In 'overview' mode, collapse low-level functions unless module is expanded
+    if (displayMode === 'overview' || groupFunctionsByModule) {
+      visibleNodes = visibleNodes.filter(n => {
+        if (n.label === 'Function') {
+          // Keep if it's investigated or highlighted
+          if (isNodeInvestigated(n)) return true;
+          // Keep if its module file is expanded
+          const parentFile = n.file || n.path;
+          if (parentFile && expandedModules.has(parentFile)) return true;
+          // Otherwise hide low-level function in overview
+          return false;
+        }
+        return true;
+      });
     }
 
-    return false;
-  };
+    const visibleNodeIds = new Set(visibleNodes.map(n => String(n.id)));
+    const visibleNodeNames = new Set(visibleNodes.map(n => n.name).filter(Boolean));
 
-  // Link color based on type and investigation state
-  const getLinkColor = (link) => {
-    if (isInvestigatedLink(link)) {
-      return "#fbbf24"; // Radiant Gold for currently investigated path
-    }
-    switch (link.type) {
-      case "CALLS":
-        return "rgba(56, 189, 248, 0.55)"; // Sky blue
-      case "DEFINES":
-        return "rgba(20, 184, 166, 0.35)"; // Teal
-      case "IMPORTS":
-        return "rgba(16, 185, 129, 0.35)"; // Emerald
-      case "OWNERSHIP":
-      case "AUTHORED":
-        return "rgba(245, 158, 11, 0.35)"; // Amber
-      case "MODIFIED":
-        return "rgba(168, 85, 247, 0.35)"; // Purple
-      case "ATTACHED_TO":
-      case "RECORDED":
-        return "rgba(244, 63, 94, 0.55)";  // Rose
-      default:
-        return "rgba(100, 116, 139, 0.3)";  // Slate
-    }
-  };
+    // Filter links by enabled relationship types and visible endpoints
+    const visibleLinks = graphData.links.filter(l => {
+      // Exclude memory-recording edges
+      if (l.type === 'RECORDED' || l.type === 'ATTACHED_TO') return false;
+      if (enabledRelTypes[l.type] === false) return false;
+
+      const sId = String(l.source?.id || l.source);
+      const tId = String(l.target?.id || l.target);
+      const sName = l.source?.name || l.source?.display_name;
+      const tName = l.target?.name || l.target?.display_name;
+
+      const sVisible = visibleNodeIds.has(sId) || (sName && visibleNodeNames.has(sName));
+      const tVisible = visibleNodeIds.has(tId) || (tName && visibleNodeNames.has(tName));
+      return sVisible && tVisible;
+    });
+
+    return { nodes: visibleNodes, links: visibleLinks };
+  }, [graphData, enabledNodeTypes, enabledRelTypes, displayMode, groupFunctionsByModule, expandedModules, highlightedNodes, pathNodeNames]);
 
   // Node base color
   const getNodeColor = (node, isInvestigated) => {
@@ -171,7 +453,115 @@ export default function GraphCanvas({
     }
   };
 
-  // Custom node rendering on Force Graph Canvas
+  // Node opacity based on display mode & local focus
+  const getNodeOpacity = (node) => {
+    if (selectedNode?.id === node.id || hoveredNode?.id === node.id) {
+      return 1.0;
+    }
+    const id = String(node.id);
+    const name = node.name;
+
+    // 1. Local Focus overrides all
+    if (focusedNeighborhood) {
+      return (focusedNeighborhood.has(id) || (name && focusedNeighborhood.has(name))) ? 1.0 : 0.10;
+    }
+
+    // 2. Investigation Mode: prominently show investigated path, mute neighbors, fade unrelated
+    if (displayMode === 'investigation') {
+      if (isNodeInvestigated(node)) return 1.0;
+      if (isRelevantToInvestigation.has(id) || (name && isRelevantToInvestigation.has(name))) {
+        return 0.70; // Nearby dependencies visible but muted
+      }
+      return 0.12; // Unrelated elements faded
+    }
+
+    // 3. Full & Overview modes
+    return 1.0;
+  };
+
+  // Edge opacity based on display mode & local focus
+  const getLinkColor = (link) => {
+    const isInvestigated = isInvestigatedLink(link);
+
+    // If local focus is active, fade links outside the focused neighborhood
+    if (focusedNeighborhood) {
+      const sId = String(link.source?.id || link.source);
+      const tId = String(link.target?.id || link.target);
+      const sName = link.source?.name || link.source?.display_name;
+      const tName = link.target?.name || link.target?.display_name;
+      const inNeighborhood = 
+        (focusedNeighborhood.has(sId) || (sName && focusedNeighborhood.has(sName))) &&
+        (focusedNeighborhood.has(tId) || (tName && focusedNeighborhood.has(tName)));
+
+      if (!inNeighborhood) return "rgba(100, 116, 139, 0.05)";
+    }
+
+    if (isInvestigated) {
+      return "#fbbf24"; // Radiant Gold for currently investigated path
+    }
+
+    // In investigation mode, mute or fade non-investigated links
+    if (displayMode === 'investigation') {
+      const sId = String(link.source?.id || link.source);
+      const tId = String(link.target?.id || link.target);
+      const sName = link.source?.name || link.source?.display_name;
+      const tName = link.target?.name || link.target?.display_name;
+
+      const isRelevant = 
+        (isRelevantToInvestigation.has(sId) || (sName && isRelevantToInvestigation.has(sName))) &&
+        (isRelevantToInvestigation.has(tId) || (tName && isRelevantToInvestigation.has(tName)));
+
+      if (!isRelevant) return "rgba(100, 116, 139, 0.08)";
+    }
+
+    switch (link.type) {
+      case "CALLS":
+        return "rgba(56, 189, 248, 0.60)"; // Sky blue
+      case "DEFINES":
+        return "rgba(20, 184, 166, 0.40)"; // Teal
+      case "IMPORTS":
+        return "rgba(16, 185, 129, 0.40)"; // Emerald
+      case "AUTHORED":
+        return "rgba(245, 158, 11, 0.40)"; // Amber
+      case "MODIFIED":
+        return "rgba(168, 85, 247, 0.40)"; // Purple
+      default:
+        return "rgba(100, 116, 139, 0.35)";  // Slate
+    }
+  };
+
+  // Directional arrow head color (vibrant & visible on dark background)
+  const getLinkArrowColor = (link) => {
+    if (isInvestigatedLink(link)) return "#fbbf24"; // Radiant Gold
+    if (focusedNeighborhood) {
+      const sId = String(link.source?.id || link.source);
+      const tId = String(link.target?.id || link.target);
+      const sName = link.source?.name || link.source?.display_name;
+      const tName = link.target?.name || link.target?.display_name;
+      const inNeighborhood = 
+        (focusedNeighborhood.has(sId) || (sName && focusedNeighborhood.has(sName))) &&
+        (focusedNeighborhood.has(tId) || (tName && focusedNeighborhood.has(tName)));
+      if (!inNeighborhood) return "rgba(100, 116, 139, 0.15)";
+    }
+    switch (link.type) {
+      case "CALLS":
+        return "#38bdf8"; // Vibrant Sky blue
+      case "DEFINES":
+        return "#14b8a6"; // Bright Teal
+      case "IMPORTS":
+        return "#10b981"; // Bright Emerald
+      case "AUTHORED":
+        return "#f59e0b"; // Bright Amber
+      case "MODIFIED":
+        return "#a855f7"; // Bright Purple
+      default:
+        return "#94a3b8"; // Clean Slate
+    }
+  };
+
+  // =========================================================================
+  // 7. CANVAS NODE RENDERING WITH ANTI-COLLISION & GOLD HIGHLIGHT
+  // =========================================================================
   const paintNode = (node, ctx, globalScale) => {
     const isInvestigated = isNodeInvestigated(node);
     const isSelected = selectedNode?.id === node.id;
@@ -181,16 +571,20 @@ export default function GraphCanvas({
       node.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const radius = isInvestigated || isSelected ? 8 : (isHovered ? 7 : 5.5);
+    const opacity = getNodeOpacity(node);
+    ctx.save();
+    ctx.globalAlpha = opacity;
+
+    const radius = isInvestigated || isSelected ? 8.5 : (isHovered ? 7.5 : 5.5);
     const color = getNodeColor(node, isInvestigated);
 
     // 1. Draw outer gold glow halo for investigated path nodes
     if (isInvestigated || isSelected || isSearchMatch) {
       ctx.beginPath();
-      ctx.arc(node.x, node.y, radius + 4 / globalScale, 0, 2 * Math.PI, false);
+      ctx.arc(node.x, node.y, radius + 4.5 / globalScale, 0, 2 * Math.PI, false);
       ctx.fillStyle = isSelected 
-        ? "rgba(56, 189, 248, 0.3)" 
-        : (isInvestigated ? "rgba(251, 191, 36, 0.35)" : "rgba(239, 68, 68, 0.3)");
+        ? "rgba(56, 189, 248, 0.35)" 
+        : (isInvestigated ? "rgba(251, 191, 36, 0.45)" : "rgba(239, 68, 68, 0.35)");
       ctx.fill();
     }
 
@@ -204,61 +598,134 @@ export default function GraphCanvas({
     if (isInvestigated || isSelected) {
       ctx.beginPath();
       ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
-      ctx.strokeStyle = isSelected ? "#38bdf8" : "#fbbf24"; // Gold ring for investigated!
+      ctx.strokeStyle = isSelected ? "#38bdf8" : "#fbbf24";
       ctx.lineWidth = 2.5 / globalScale;
       ctx.stroke();
     }
 
-    // 4. Anti-Collision Text Rendering:
-    // Only render full text when zoomed in (globalScale >= 1.25), or if the node is investigated/selected/hovered
-    const shouldDrawLabel = isInvestigated || isSelected || isHovered || isSearchMatch || globalScale >= 1.25;
+    // 4. Draw Hop Step Sequence Badge on investigated path nodes (1, 2, 3...)
+    const hopStep = pathNodeOrder.get(node.name || node.display_name);
+    if (hopStep && globalScale >= 0.8) {
+      const badgeRadius = 4 / globalScale;
+      const badgeX = node.x + radius - 1 / globalScale;
+      const badgeY = node.y - radius + 1 / globalScale;
+      ctx.beginPath();
+      ctx.arc(badgeX, badgeY, badgeRadius, 0, 2 * Math.PI);
+      ctx.fillStyle = "#fbbf24";
+      ctx.fill();
+      ctx.fillStyle = "#000000";
+      ctx.font = `bold ${Math.max(5.5 / globalScale, 3)}px 'JetBrains Mono', monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(hopStep), badgeX, badgeY);
+    }
 
-    if (shouldDrawLabel) {
+    // 5. Anti-Collision Useful Label Logic:
+    // Labels are shown when showLabels is toggled on (scale >= 0.2), 
+    // or always if investigated, selected, hovered, search matched, or in focused neighborhood.
+    const isFocusedOrNeighbor = focusedNeighborhood && (
+      focusedNeighborhood.has(String(node.id)) || 
+      (node.name && focusedNeighborhood.has(node.name))
+    );
+
+    const shouldDrawLabel = 
+      isInvestigated || 
+      isSelected || 
+      isHovered || 
+      isSearchMatch || 
+      (focusedNode && isFocusedOrNeighbor) ||
+      (showLabels && globalScale >= 0.20);
+
+    if (shouldDrawLabel && (opacity > 0.2 || isHovered || isSelected)) {
       const rawLabel = getCleanNodeName(node);
-      const label = rawLabel.length > 20 ? `${rawLabel.slice(0, 18)}…` : rawLabel;
-      const fontSize = Math.max(9.5 / globalScale, 3);
-      ctx.font = `${isInvestigated || isSelected ? '600' : '400'} ${fontSize}px 'JetBrains Mono', Inter, monospace`;
+      const maxChars = globalScale >= 1.5 ? 28 : 22;
+      const label = rawLabel.length > maxChars ? `${rawLabel.slice(0, maxChars - 2)}…` : rawLabel;
+      const fontSize = Math.max(9.5 / globalScale, 2.5);
+      ctx.font = `${isInvestigated || isSelected ? '600' : '500'} ${fontSize}px 'JetBrains Mono', Inter, monospace`;
 
       const textMetrics = ctx.measureText(label);
       const textWidth = textMetrics.width;
-      const paddingX = 3.5 / globalScale;
+      const paddingX = 4 / globalScale;
       const paddingY = 2 / globalScale;
       const pillHeight = fontSize + paddingY * 2;
       const pillWidth = textWidth + paddingX * 2;
-      const pillY = node.y + radius + 2.5 / globalScale;
+      const pillY = node.y + radius + 3 / globalScale;
 
       // Dark backdrop pill to prevent edge line collisions
       ctx.fillStyle = isInvestigated || isSelected 
-        ? "rgba(15, 23, 42, 0.95)" 
-        : "rgba(15, 23, 42, 0.78)";
+        ? "rgba(15, 23, 42, 0.96)" 
+        : (isHovered ? "rgba(15, 23, 42, 0.94)" : "rgba(15, 23, 42, 0.88)");
       
       ctx.beginPath();
       if (ctx.roundRect) {
-        ctx.roundRect(node.x - pillWidth / 2, pillY, pillWidth, pillHeight, 3 / globalScale);
+        ctx.roundRect(node.x - pillWidth / 2, pillY, pillWidth, pillHeight, 3.5 / globalScale);
       } else {
         ctx.rect(node.x - pillWidth / 2, pillY, pillWidth, pillHeight);
       }
       ctx.fill();
 
-      // Pill border (gold if investigated, sky if selected)
-      if (isInvestigated || isSelected) {
-        ctx.strokeStyle = isSelected ? "#38bdf8" : "#fbbf24";
+      // Pill border
+      if (isInvestigated) {
+        ctx.strokeStyle = "#fbbf24";
+        ctx.lineWidth = 1.2 / globalScale;
+        ctx.stroke();
+      } else if (isSelected) {
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 1.2 / globalScale;
+        ctx.stroke();
+      } else if (isHovered) {
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
         ctx.lineWidth = 1 / globalScale;
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = "rgba(51, 65, 85, 0.55)";
+        ctx.lineWidth = 0.75 / globalScale;
         ctx.stroke();
       }
 
-      // Text label
-      ctx.fillStyle = isInvestigated ? "#fef08a" : (isSelected ? "#7dd3fc" : "#cbd5e1");
+      // Label text color matching node type
+      let textColor = "#cbd5e1";
+      if (isInvestigated) {
+        textColor = "#fef08a"; // Gold
+      } else if (isSelected) {
+        textColor = "#7dd3fc"; // Sky
+      } else if (isHovered) {
+        textColor = "#ffffff"; // Bright White
+      } else {
+        switch (node.label) {
+          case "Function":
+            textColor = "#bae6fd"; // Light sky
+            break;
+          case "Module":
+            textColor = "#a7f3d0"; // Light emerald
+            break;
+          case "Engineer":
+            textColor = "#fed7aa"; // Light orange
+            break;
+          case "Commit":
+            textColor = "#e9d5ff"; // Light purple
+            break;
+          case "Finding":
+            textColor = "#fbcfe8"; // Light pink
+            break;
+          default:
+            textColor = "#cbd5e1"; // Slate
+        }
+      }
+
+      ctx.fillStyle = textColor;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(label, node.x, pillY + pillHeight / 2);
     }
+
+    ctx.restore();
   };
 
   // Node hit area for smooth hover & click
   const paintNodeArea = (node, color, ctx) => {
     ctx.beginPath();
-    ctx.arc(node.x, node.y, 10, 0, 2 * Math.PI, false);
+    ctx.arc(node.x, node.y, 11, 0, 2 * Math.PI, false);
     ctx.fillStyle = color;
     ctx.fill();
   };
@@ -278,7 +745,7 @@ export default function GraphCanvas({
   const handleSearchNode = (e) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
-    const found = graphData.nodes.find(n => 
+    const found = filteredGraphData.nodes.find(n => 
       n.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       n.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -321,92 +788,266 @@ export default function GraphCanvas({
   }, [selectedNode, graphData.links]);
 
   return (
-    <div className="flex-1 relative bg-[#000000] flex flex-col h-full overflow-hidden select-none">
+    <div className="flex-1 relative bg-[#000000] flex flex-col h-full overflow-hidden select-none font-sans">
       
-      {/* Top Floating Namespace & Stats Badge */}
-      <div className="absolute top-4 left-4 z-10 flex items-center space-x-3 bg-zinc-950/90 backdrop-blur-md border border-zinc-800 px-3.5 py-2 rounded-xl shadow-2xl">
-        <div className="w-2.5 h-2.5 rounded-full bg-blue-400"></div>
-        <span className="text-xs font-mono text-zinc-300">
-          Namespace: <strong className="text-zinc-100">repo:{activeTenant}</strong>
-        </span>
-        <span className="text-xs text-zinc-700">|</span>
-        <span className="text-xs text-zinc-400 font-mono">
-          {graphData.nodes.length} Nodes, {graphData.links.length} Edges
-        </span>
-        {(highlightedNodes.size > 0 || pathNodeNames.size > 0) && (
-          <>
-            <span className="text-xs text-zinc-700">|</span>
-            <span className="text-xs font-mono text-blue-400 flex items-center space-x-1">
-              <span>{Math.max(highlightedNodes.size, pathNodeNames.size)} Hops in Path</span>
-            </span>
-          </>
-        )}
+      {/* ================= 1. TOP TOOLBAR: DISPLAY MODES & STATS ================= */}
+      <div className="absolute top-3.5 left-4 z-10 flex flex-wrap items-center gap-2">
+        
+        {/* Segmented Display Mode Switcher (Investigation | Overview | Full Graph) */}
+        <div className="bg-[#121214]/95 backdrop-blur-md border border-zinc-800 p-1 rounded-xl shadow-2xl flex items-center space-x-1">
+          <button
+            onClick={() => setDisplayMode('investigation')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium flex items-center space-x-1.5 transition ${
+              displayMode === 'investigation'
+                ? "bg-zinc-850 text-blue-400 border border-zinc-700 font-bold shadow-sm"
+                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
+            }`}
+            title="Show only incident path, relevant functions, and connected evidence"
+          >
+            <ShieldAlert size={14} strokeWidth={1.8} className={displayMode === 'investigation' ? 'text-zinc-100' : 'text-zinc-400'} />
+            <span>Investigation</span>
+            {hasInvestigationPath && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setDisplayMode('overview')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium flex items-center space-x-1.5 transition ${
+              displayMode === 'overview'
+                ? "bg-zinc-850 text-blue-400 border border-zinc-700 font-bold shadow-sm"
+                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
+            }`}
+            title="Repositories, modules, services, and major relationships"
+          >
+            <Layers size={14} strokeWidth={1.8} className={displayMode === 'overview' ? 'text-zinc-100' : 'text-zinc-400'} />
+            <span>Overview</span>
+          </button>
+
+          <button
+            onClick={() => setDisplayMode('full')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium flex items-center space-x-1.5 transition ${
+              displayMode === 'full'
+                ? "bg-zinc-850 text-blue-400 border border-zinc-700 font-bold shadow-sm"
+                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
+            }`}
+            title="Every indexed node and relationship in FalkorDB"
+          >
+            <Network size={14} strokeWidth={1.8} className={displayMode === 'full' ? 'text-zinc-100' : 'text-zinc-400'} />
+            <span>Full Graph</span>
+          </button>
+        </div>
+
+        {/* Namespace & Node Count Pill */}
+        <div className="bg-[#121214]/90 backdrop-blur-md border border-zinc-800 px-3 py-1.5 rounded-xl text-xs font-mono text-zinc-400 flex items-center space-x-2 shadow-lg">
+          <span className="text-zinc-500">repo:</span>
+          <span className="text-zinc-200 font-bold">{activeTenant}</span>
+          <span className="text-zinc-700">|</span>
+          <span>
+            {filteredGraphData.nodes.length} / {graphData.nodes.length} Nodes
+          </span>
+        </div>
+
       </div>
 
-      {/* Floating Canvas Controls & Node Search */}
-      <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
+      {/* ================= 2. ACTIVE FOCUS BANNER ================= */}
+      {focusedNode && (
+        <div className="absolute top-16 left-4 z-10 bg-zinc-900/95 backdrop-blur-md border border-blue-500/60 px-3.5 py-1.5 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs font-mono text-blue-400 animate-in fade-in duration-150">
+          <Target size={14} strokeWidth={1.8} className="text-zinc-200 animate-pulse" />
+          <span>
+            Focus: <strong className="text-zinc-100">{focusedNode.name}</strong> ({focusedNode.hops}-Hop Neighborhood)
+          </span>
+          <button
+            onClick={() => setFocusedNode(null)}
+            className="text-zinc-300 hover:text-white p-0.5 rounded hover:bg-zinc-800 ml-1"
+            title="Reset Focus"
+          >
+            <X size={13} strokeWidth={1.8} className="text-zinc-300" />
+          </button>
+        </div>
+      )}
+
+      {/* ================= 3. FLOATING CANVAS CONTROLS (TOP RIGHT) ================= */}
+      <div className="absolute top-3.5 right-4 z-10 flex items-center space-x-2">
+        
+        {/* Node Search Bar */}
         <form onSubmit={handleSearchNode} className="relative">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Find function/module..."
-            className="bg-zinc-900 border border-zinc-800 text-xs rounded-lg pl-8 pr-7 py-1.5 text-zinc-200 outline-none focus:border-blue-500 font-mono w-44"
+            placeholder="Search function / symbol..."
+            className="bg-[#121214] border border-zinc-800 text-xs rounded-lg pl-8 pr-7 py-1.5 text-zinc-200 outline-none focus:border-blue-500 font-mono w-48 shadow-lg"
           />
-          <Search size={16} strokeWidth={1.8} className="text-zinc-500 absolute left-2.5 top-2" />
+          <Search size={15} strokeWidth={1.8} className="text-zinc-300 absolute left-2.5 top-2" />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-2 top-2 text-zinc-400 hover:text-blue-400"
+              className="absolute right-2 top-2 text-zinc-300 hover:text-white"
             >
-              <X size={14} strokeWidth={1.8} />
+              <X size={14} strokeWidth={1.8} className="text-zinc-300" />
             </button>
           )}
         </form>
 
-        <div className="flex items-center space-x-1 bg-zinc-900 border border-zinc-800 p-1 rounded-lg">
+        {/* Relationship & Filter Drawer Toggle Button */}
+        <button
+          onClick={() => setShowFilterMenu(!showFilterMenu)}
+          className={`h-8 px-2.5 rounded-lg border text-xs font-mono transition flex items-center space-x-1.5 text-blue-400 ${
+            showFilterMenu
+              ? "bg-zinc-850 border-blue-500/80 font-bold"
+              : "bg-[#121214] border-zinc-800 hover:border-zinc-700"
+          }`}
+          title="Filter relationships and node types"
+        >
+          <Filter size={14} strokeWidth={1.8} className="text-zinc-200" />
+          <span>Filters</span>
+        </button>
+
+        {/* Labels Display Toggle Button */}
+        <button
+          onClick={() => setShowLabels(!showLabels)}
+          className={`h-8 px-2.5 rounded-lg border text-xs font-mono transition flex items-center space-x-1.5 text-blue-400 ${
+            showLabels
+              ? "bg-zinc-850 border-blue-500/80 font-semibold"
+              : "bg-[#121214] border-zinc-800 hover:border-zinc-700 text-zinc-400"
+          }`}
+          title={showLabels ? "Hide node labels (clean view)" : "Show all node labels"}
+        >
+          <Tag size={13} strokeWidth={1.8} className="text-zinc-200" />
+          <span>Labels</span>
+        </button>
+
+        {/* Zoom Controls */}
+        <div className="flex items-center space-x-1 bg-[#121214] border border-zinc-800 p-1 rounded-lg shadow-lg">
           <button
             onClick={handleZoomIn}
-            className="p-1 hover:bg-zinc-850 text-blue-400 hover:text-blue-300 rounded transition"
+            className="p-1 hover:bg-zinc-850 text-zinc-300 hover:text-white rounded transition"
             title="Zoom In"
           >
-            <ZoomIn size={16} strokeWidth={1.8} />
+            <ZoomIn size={16} strokeWidth={1.8} className="text-zinc-300" />
           </button>
           <button
             onClick={handleZoomOut}
-            className="p-1 hover:bg-zinc-850 text-blue-400 hover:text-blue-300 rounded transition"
+            className="p-1 hover:bg-zinc-850 text-zinc-300 hover:text-white rounded transition"
             title="Zoom Out"
           >
-            <ZoomOut size={16} strokeWidth={1.8} />
+            <ZoomOut size={16} strokeWidth={1.8} className="text-zinc-300" />
           </button>
           <button
             onClick={handleFitView}
-            className="p-1 hover:bg-zinc-850 text-blue-400 hover:text-blue-300 rounded transition"
+            className="p-1 hover:bg-zinc-850 text-zinc-300 hover:text-white rounded transition"
             title="Fit to Screen"
           >
-            <Maximize2 size={16} strokeWidth={1.8} />
+            <Maximize2 size={16} strokeWidth={1.8} className="text-zinc-300" />
           </button>
         </div>
       </div>
 
-      {/* ================= NODE INSPECTOR MODAL PANEL ================= */}
+      {/* ================= 4. FILTER POPOVER MENU ================= */}
+      {showFilterMenu && (
+        <div className="absolute top-14 right-4 z-20 bg-[#121214]/95 backdrop-blur-md border border-zinc-800 p-4 rounded-xl shadow-2xl w-80 space-y-3.5 text-xs animate-in fade-in duration-150">
+          <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
+            <span className="font-bold text-zinc-200 font-mono flex items-center space-x-1.5">
+              <Sliders size={14} strokeWidth={1.8} className="text-zinc-200" />
+              <span>Graph Filters & Projections</span>
+            </span>
+            <button 
+              onClick={() => setShowFilterMenu(false)}
+              className="text-zinc-400 hover:text-white"
+            >
+              <X size={14} strokeWidth={1.8} className="text-zinc-300" />
+            </button>
+          </div>
+
+          {/* Quick Presets */}
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={applyCodeOnlyFilter}
+              className="flex-1 py-1 px-2 rounded bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-[11px] font-mono text-blue-400 transition text-center"
+            >
+              Code Path Only
+            </button>
+            <button
+              onClick={resetAllFilters}
+              className="py-1 px-2 rounded bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-[11px] font-mono text-zinc-400 hover:text-white transition"
+            >
+              Reset
+            </button>
+          </div>
+
+          {/* Relationship Filters */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] uppercase font-bold text-zinc-500 font-mono">
+              Relationship Types
+            </label>
+            <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
+              {['CALLS', 'DEFINES', 'AUTHORED', 'MODIFIED'].map(rel => (
+                <label 
+                  key={rel}
+                  className="flex items-center space-x-2 p-1.5 rounded bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-850 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={enabledRelTypes[rel] !== false}
+                    onChange={(e) => setEnabledRelTypes(prev => ({ ...prev, [rel]: e.target.checked }))}
+                    className="accent-blue-500 rounded"
+                  />
+                  <span className="text-zinc-300">{rel}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Entity Filters */}
+          <div className="space-y-1.5 pt-1 border-t border-zinc-800">
+            <label className="text-[10px] uppercase font-bold text-zinc-500 font-mono">
+              Node Entities
+            </label>
+            <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
+              {[
+                { label: 'Function', color: 'bg-sky-400' },
+                { label: 'Module', color: 'bg-emerald-400' },
+                { label: 'Commit', color: 'bg-purple-400' },
+                { label: 'Engineer', color: 'bg-orange-400' }
+              ].map(item => (
+                <label 
+                  key={item.label}
+                  className="flex items-center space-x-2 p-1.5 rounded bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-850 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={enabledNodeTypes[item.label] !== false}
+                    onChange={(e) => setEnabledNodeTypes(prev => ({ ...prev, [item.label]: e.target.checked }))}
+                    className="accent-blue-500 rounded"
+                  />
+                  <span className={`w-2 h-2 rounded-full ${item.color}`}></span>
+                  <span className="text-zinc-300">{item.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= 5. NODE INSPECTOR MODAL PANEL ================= */}
       {selectedNode && (
-        <div className="absolute top-16 right-4 z-20 bg-zinc-950/95 backdrop-blur-md border border-zinc-800 p-4 rounded-xl shadow-2xl max-w-sm w-88 space-y-3 text-xs animate-in fade-in duration-200">
+        <div className="absolute top-16 right-4 z-20 bg-[#121214]/95 backdrop-blur-md border border-zinc-800 p-4 rounded-xl shadow-2xl max-w-sm w-88 space-y-3 text-xs animate-in fade-in duration-200">
           
           {/* Header */}
           <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
             <div className="flex items-center space-x-2">
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-zinc-900 text-zinc-300 border border-zinc-800">
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-zinc-900 text-zinc-300 border border-zinc-800 font-mono">
                 {selectedNode.label}
               </span>
               <span className="text-[10px] text-zinc-500 font-mono">Inspector</span>
             </div>
             <button 
               onClick={() => setSelectedNode(null)} 
-              className="text-zinc-500 hover:text-blue-400 p-0.5 rounded hover:bg-zinc-900"
+              className="text-zinc-400 hover:text-white p-0.5 rounded hover:bg-zinc-900"
             >
-              <X size={14} strokeWidth={1.8} />
+              <X size={14} strokeWidth={1.8} className="text-zinc-300" />
             </button>
           </div>
 
@@ -422,6 +1063,38 @@ export default function GraphCanvas({
             )}
           </div>
 
+          {/* Local Exploration Focus Actions */}
+          <div className="p-2.5 bg-zinc-900/60 rounded-lg border border-zinc-800/80 space-y-1.5">
+            <span className="text-[10px] text-zinc-500 uppercase font-bold font-mono">Local Exploration</span>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setFocusedNode({ id: selectedNode.id, name: selectedNode.name, hops: 1 })}
+                className="flex-1 py-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 hover:border-blue-500 text-blue-400 rounded text-[11px] font-mono transition flex items-center justify-center space-x-1"
+                title="Focus on this node and dim everything outside 1 hop"
+              >
+                <Target size={12} strokeWidth={1.8} className="text-zinc-200" />
+                <span>Focus 1-Hop</span>
+              </button>
+              <button
+                onClick={() => setFocusedNode({ id: selectedNode.id, name: selectedNode.name, hops: 2 })}
+                className="flex-1 py-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 hover:border-blue-500 text-blue-400 rounded text-[11px] font-mono transition flex items-center justify-center space-x-1"
+                title="Focus on this node and dim everything outside 2 hops"
+              >
+                <Target size={12} strokeWidth={1.8} className="text-zinc-200" />
+                <span>Focus 2-Hop</span>
+              </button>
+              {focusedNode && (
+                <button
+                  onClick={() => setFocusedNode(null)}
+                  className="px-2 py-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white rounded text-[11px] font-mono transition"
+                  title="Clear Local Focus"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Internal Node ID */}
           <div className="bg-[#000000] p-2.5 rounded-lg border border-zinc-800 space-y-1.5 font-mono text-[11px]">
             <div className="flex items-center justify-between">
@@ -431,7 +1104,7 @@ export default function GraphCanvas({
                 className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center space-x-1"
                 title="Copy ID"
               >
-                {copiedId ? <Check size={14} strokeWidth={1.8} className="text-blue-400" /> : <Copy size={14} strokeWidth={1.8} className="text-blue-400" />}
+                {copiedId ? <Check size={14} strokeWidth={1.8} className="text-zinc-200" /> : <Copy size={14} strokeWidth={1.8} className="text-zinc-200" />}
                 <span>{copiedId ? "Copied" : "Copy"}</span>
               </button>
             </div>
@@ -453,28 +1126,19 @@ export default function GraphCanvas({
             </div>
           )}
 
-          {/* Message / Summary */}
+          {/* ADR Decision Tag */}
           {selectedNode.decision_tag && (
             <div className="text-[11px] text-zinc-200 font-mono font-semibold bg-zinc-900 p-2 rounded border border-zinc-800 flex items-center space-x-1.5">
-              <Shield size={14} strokeWidth={1.8} className="text-blue-400" />
+              <ShieldAlert size={14} strokeWidth={1.8} className="text-zinc-200" />
               <span>Decision: {selectedNode.decision_tag}</span>
             </div>
           )}
-          {selectedNode.message && (
-            <div className="text-[11px] text-zinc-300 bg-[#000000] p-2 rounded border border-zinc-800 leading-relaxed font-sans">
-              {selectedNode.message}
-            </div>
-          )}
+
+          {/* Incident Memory */}
           {selectedNode.summary && (
             <div className="text-[11px] text-zinc-300 bg-[#000000] p-2 rounded border border-zinc-800 leading-relaxed font-sans">
-              <strong className="block text-[10px] uppercase text-zinc-400">Incident Memory:</strong>
+              <strong className="block text-[10px] uppercase text-zinc-400 font-mono">Incident Memory:</strong>
               {selectedNode.summary}
-            </div>
-          )}
-          {selectedNode.remediation && (
-            <div className="text-[11px] text-zinc-300 bg-[#000000] p-2 rounded border border-zinc-800 leading-relaxed font-sans">
-              <strong className="block text-[10px] uppercase text-zinc-400">Remediation:</strong>
-              {selectedNode.remediation}
             </div>
           )}
 
@@ -484,7 +1148,7 @@ export default function GraphCanvas({
             <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
               {connectedNeighbors.incoming.map((rel, idx) => (
                 <div key={idx} className="flex items-center space-x-1 text-zinc-400">
-                  <ArrowRight size={14} strokeWidth={1.8} className="text-blue-400 rotate-180" />
+                  <ArrowRight size={14} strokeWidth={1.8} className="text-zinc-300 rotate-180" />
                   <span className="text-zinc-200 font-bold">{rel.type}</span>
                   <span className="text-zinc-500">from</span>
                   <span className="text-zinc-300 truncate">{rel.from}</span>
@@ -493,7 +1157,7 @@ export default function GraphCanvas({
               ))}
               {connectedNeighbors.outgoing.map((rel, idx) => (
                 <div key={idx} className="flex items-center space-x-1 text-zinc-400">
-                  <ArrowRight size={14} strokeWidth={1.8} className="text-blue-400" />
+                  <ArrowRight size={14} strokeWidth={1.8} className="text-zinc-300" />
                   <span className="text-zinc-200 font-bold">{rel.type}</span>
                   <span className="text-zinc-500">to</span>
                   <span className="text-zinc-300 truncate">{rel.to}</span>
@@ -506,19 +1170,19 @@ export default function GraphCanvas({
             </div>
           </div>
 
-          {/* Action button (Button text strictly in blue) */}
+          {/* Action button */}
           <button
             onClick={() => handleCenterNode(selectedNode)}
             className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded text-xs font-mono font-medium flex items-center justify-center space-x-1.5 transition"
           >
-            <Compass size={16} strokeWidth={1.8} className="text-blue-400" />
+            <Compass size={16} strokeWidth={1.8} className="text-zinc-200" />
             <span>Center Node in View</span>
           </button>
         </div>
       )}
 
-      {/* Schema & Relationship Legend */}
-      <div className="absolute bottom-4 right-4 z-10 bg-zinc-950/90 backdrop-blur-md border border-zinc-800 p-3 rounded-xl shadow-2xl space-y-1.5 text-[11px]">
+      {/* ================= 6. SCHEMA & TOPOLOGY LEGEND ================= */}
+      <div className="absolute bottom-4 right-4 z-10 bg-[#121214]/90 backdrop-blur-md border border-zinc-800 p-3 rounded-xl shadow-2xl space-y-1.5 text-[11px] font-sans">
         <div className="font-bold text-zinc-300 pb-1 border-b border-zinc-800 flex items-center justify-between">
           <span>Topology Legend</span>
           <span className="text-[10px] text-zinc-500 font-mono">FalkorDB</span>
@@ -535,11 +1199,11 @@ export default function GraphCanvas({
             <span className="text-zinc-300">Module (File)</span>
           </div>
           <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-zinc-400"></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-orange-400"></span>
             <span className="text-zinc-300">Engineer</span>
           </div>
           <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-zinc-500"></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
             <span className="text-zinc-300">Commit</span>
           </div>
         </div>
@@ -547,58 +1211,64 @@ export default function GraphCanvas({
         {/* Investigated Path Highlight Legend */}
         <div className="pt-1.5 border-t border-zinc-800 flex items-center space-x-2 text-[10px]">
           <span className="w-3 h-1.5 rounded-full bg-amber-400"></span>
-          <span className="text-amber-400 font-semibold">Investigated Path (Gold)</span>
+          <span className="text-amber-400 font-semibold font-mono">Investigated Path (Gold)</span>
         </div>
       </div>
 
-      {/* Force Directed Graph Canvas */}
-      <div className="flex-1 cursor-grab active:cursor-grabbing w-full h-full">
-        <ForceGraph2D
-          ref={fgRef}
-          graphData={graphData}
-          nodeId="id"
-          nodeCanvasObject={paintNode}
-          nodePointerAreaPaint={paintNodeArea}
-          // Short label on hover
-          nodeLabel={node => `${node.label}: ${getCleanNodeName(node)}`}
-          onNodeClick={(node) => {
-            setSelectedNode(node);
-            if (onNodeClick) onNodeClick(node);
-          }}
-          onNodeHover={node => setHoveredNode(node || null)}
-          
-          // Edge configuration
-          linkHoverPrecision={6}
-          // Short label on hover for relationships
-          linkLabel={link => `${link.type}${link.line ? ` [line ${link.line}]` : ''}`}
-          linkColor={getLinkColor}
-          linkWidth={link => isInvestigatedLink(link) ? 3.0 : (link.type === 'CALLS' ? 1.8 : 1.2)}
-          
-          // Directional Arrows on relationships such as CALLS
-          linkDirectionalArrowLength={link => {
-            if (isInvestigatedLink(link)) return 6.5;
-            if (link.type === 'CALLS') return 5.5;
-            if (link.type === 'ATTACHED_TO' || link.type === 'RECORDED') return 4.5;
-            if (link.type === 'DEFINES' || link.type === 'IMPORTS') return 4.0;
-            return 3.5;
-          }}
-          linkDirectionalArrowRelPos={0.95}
-          linkDirectionalArrowColor={link => isInvestigatedLink(link) ? "#fbbf24" : getLinkColor(link)}
-          
-          // Flowing directional particles on active paths and CALLS
-          linkDirectionalParticles={link => {
-            if (isInvestigatedLink(link)) return 4;
-            if (link.type === 'CALLS') return 2;
-            return 0;
-          }}
-          linkDirectionalParticleWidth={link => isInvestigatedLink(link) ? 2.5 : 1.5}
-          linkDirectionalParticleSpeed={link => isInvestigatedLink(link) ? 0.012 : 0.006}
-          linkDirectionalParticleColor={link => isInvestigatedLink(link) ? "#fbbf24" : "#38bdf8"}
-          onLinkHover={link => setHoveredLink(link || null)}
-          
-          d3VelocityDecay={0.3}
-          cooldownTicks={120}
-        />
+      {/* ================= 7. FORCE DIRECTED GRAPH CANVAS ================= */}
+      <div 
+        ref={containerRef} 
+        className="flex-1 w-full h-full relative overflow-hidden"
+      >
+        {dimensions.width > 0 && dimensions.height > 0 && (
+          <ForceGraph2D
+            ref={fgRef}
+            width={dimensions.width}
+            height={dimensions.height}
+            graphData={filteredGraphData}
+            nodeId="id"
+            nodeCanvasObject={paintNode}
+            nodePointerAreaPaint={paintNodeArea}
+            // Short label on hover
+            nodeLabel={node => `${node.label}: ${getCleanNodeName(node)}`}
+            onNodeClick={(node) => {
+              setSelectedNode(node);
+              if (onNodeClick) onNodeClick(node);
+            }}
+            onNodeHover={node => setHoveredNode(node || null)}
+            
+            // Edge configuration
+            linkHoverPrecision={8}
+            linkLabel={link => `${link.type}${link.line ? ` [line ${link.line}]` : ''}`}
+            linkColor={getLinkColor}
+            linkWidth={link => isInvestigatedLink(link) ? 3.2 : (link.type === 'CALLS' ? 2.0 : 1.2)}
+            
+            // Directional Arrow Pointers on relationships (CALLS, DEFINES, IMPORTS, etc.)
+            linkDirectionalArrowLength={link => {
+              if (isInvestigatedLink(link)) return 9.5;
+              if (link.type === 'CALLS') return 8.5;
+              if (link.type === 'DEFINES' || link.type === 'IMPORTS') return 7.5;
+              if (link.type === 'AUTHORED' || link.type === 'MODIFIED') return 7.5;
+              return 7.0;
+            }}
+            linkDirectionalArrowRelPos={0.58}
+            linkDirectionalArrowColor={getLinkArrowColor}
+            
+            // Flowing directional particles on active paths and CALLS
+            linkDirectionalParticles={link => {
+              if (isInvestigatedLink(link)) return 4;
+              if (link.type === 'CALLS' && displayMode !== 'overview') return 2;
+              return 0;
+            }}
+            linkDirectionalParticleWidth={link => isInvestigatedLink(link) ? 2.8 : 1.5}
+            linkDirectionalParticleSpeed={link => isInvestigatedLink(link) ? 0.012 : 0.006}
+            linkDirectionalParticleColor={link => isInvestigatedLink(link) ? "#fbbf24" : "#38bdf8"}
+            onLinkHover={link => setHoveredLink(link || null)}
+            
+            d3VelocityDecay={0.3}
+            cooldownTicks={120}
+          />
+        )}
       </div>
 
     </div>

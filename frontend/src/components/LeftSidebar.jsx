@@ -23,7 +23,10 @@ export default function LeftSidebar({
   appliedInfo,
   onIngest,
   isIngesting,
-  ingestStatus
+  ingestStatus,
+  width = 260,
+  onResizeStart,
+  isResizing = false
 }) {
   // Explorer state
   const [repoTree, setRepoTree] = useState(null);
@@ -96,15 +99,15 @@ export default function LeftSidebar({
       >
         <div className="flex items-center space-x-1.5 truncate">
           {!isFile ? (
-            node.isOpen ? <FolderOpen size={15} strokeWidth={1.8} className="text-zinc-400 shrink-0" /> : <Folder size={15} strokeWidth={1.8} className="text-zinc-500 shrink-0" />
+            node.isOpen ? <FolderOpen size={15} strokeWidth={1.8} className="text-zinc-300 shrink-0" /> : <Folder size={15} strokeWidth={1.8} className="text-zinc-400 shrink-0" />
           ) : (
-            <FileCode size={15} strokeWidth={1.8} className={`shrink-0 ${node.data.language === 'python' ? 'text-blue-400' : 'text-zinc-500'}`} />
+            <FileCode size={15} strokeWidth={1.8} className="shrink-0 text-zinc-300" />
           )}
           <span className="truncate">{node.data.name}</span>
         </div>
 
         {isFile && node.data.indexed && (
-          <CircleCheck size={14} strokeWidth={1.8} className="text-blue-400 shrink-0 opacity-80" title="Indexed" />
+          <CircleCheck size={14} strokeWidth={1.8} className="text-zinc-300 shrink-0 opacity-80" title="Indexed" />
         )}
       </div>
     );
@@ -125,7 +128,20 @@ export default function LeftSidebar({
   });
 
   return (
-    <div className="w-64 bg-[#09090b] border-r border-zinc-800 flex flex-col h-full select-none shrink-0 overflow-hidden">
+    <div 
+      style={{ width: `${width}px` }}
+      className="bg-[#09090b] border-r border-zinc-800 flex flex-col h-full select-none shrink-0 overflow-hidden relative group"
+    >
+      {/* Right Edge Resize Handle */}
+      <div 
+        onMouseDown={onResizeStart}
+        className={`absolute top-0 right-0 bottom-0 w-1 cursor-col-resize z-40 transition-colors ${
+          isResizing 
+            ? 'bg-blue-500 w-1' 
+            : 'bg-transparent hover:bg-blue-500/70'
+        }`}
+        title="Drag to resize sidebar"
+      />
       
       {/* Sidebar Section Title */}
       <div className="h-9 px-3 border-b border-zinc-800 flex items-center justify-between text-[11px] font-bold text-zinc-400 font-mono tracking-wider uppercase bg-[#09090b]">
@@ -138,7 +154,7 @@ export default function LeftSidebar({
         </span>
         <button 
           onClick={activeView === 'explorer' ? fetchTree : fetchCommits}
-          className="text-zinc-500 hover:text-blue-400 p-1"
+          className="text-zinc-400 hover:text-zinc-100 p-1"
           title="Refresh"
         >
           <RefreshCw size={14} strokeWidth={1.8} />
@@ -152,7 +168,7 @@ export default function LeftSidebar({
           {/* Search Bar */}
           <div className="p-2 border-b border-zinc-800">
             <div className="relative">
-              <Search size={14} strokeWidth={1.8} className="text-zinc-500 absolute left-2 top-2" />
+              <Search size={14} strokeWidth={1.8} className="text-zinc-400 absolute left-2 top-2" />
               <input
                 type="text"
                 value={searchQuery}
@@ -185,7 +201,7 @@ export default function LeftSidebar({
                         selectedFile?.path === f.path ? "bg-zinc-900 text-blue-400" : "text-zinc-300 hover:bg-zinc-900/60"
                       }`}
                     >
-                      <FileCode size={14} strokeWidth={1.8} className="text-blue-400 shrink-0" />
+                      <FileCode size={14} strokeWidth={1.8} className="text-zinc-300 shrink-0" />
                       <span className="truncate">{f.name}</span>
                     </div>
                     {f.symbols && (
@@ -233,7 +249,7 @@ export default function LeftSidebar({
             <div className="bg-zinc-950 border border-zinc-800 p-2.5 rounded-lg space-y-2">
               <div className="flex items-center justify-between text-xs font-mono text-zinc-200 font-bold">
                 <span className="flex items-center space-x-1">
-                  <GitPullRequest size={16} strokeWidth={1.8} className="text-blue-400" />
+                  <GitPullRequest size={16} strokeWidth={1.8} className="text-zinc-200" />
                   <span>Proposed Patch</span>
                 </span>
                 <span className="w-2 h-2 rounded-full bg-blue-400"></span>
@@ -244,7 +260,7 @@ export default function LeftSidebar({
                 disabled={isApplyingPatch}
                 className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded text-xs font-mono font-bold transition flex items-center justify-center space-x-1.5 disabled:opacity-50"
               >
-                {isApplyingPatch ? <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" /> : <GitCommit size={16} strokeWidth={1.8} className="text-blue-400" />}
+                {isApplyingPatch ? <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-zinc-200" /> : <GitCommit size={16} strokeWidth={1.8} className="text-zinc-200" />}
                 <span>{isApplyingPatch ? "Committing..." : "Apply & Commit"}</span>
               </button>
               {appliedInfo && (
@@ -374,7 +390,7 @@ export default function LeftSidebar({
             disabled={isIngesting}
             className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-blue-500 text-blue-400 rounded font-bold transition flex items-center justify-center space-x-1.5 disabled:opacity-50"
           >
-            {isIngesting ? <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" /> : <FolderGit2 size={16} strokeWidth={1.8} className="text-blue-400" />}
+            {isIngesting ? <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-zinc-200" /> : <FolderGit2 size={16} strokeWidth={1.8} className="text-zinc-200" />}
             <span>{isIngesting ? "Ingesting..." : "Ingest Repository"}</span>
           </button>
           {ingestStatus && (

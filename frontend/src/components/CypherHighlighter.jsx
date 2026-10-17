@@ -65,7 +65,7 @@ export default function CypherHighlighter({ cypher, title = "Cypher Query" }) {
     <div className="relative group rounded-lg overflow-hidden border border-zinc-800 bg-[#000000] shadow-inner">
       <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-950 border-b border-zinc-800 text-[10px] text-zinc-400 font-mono">
         <div className="flex items-center space-x-1.5">
-          <Terminal size={14} strokeWidth={1.8} className="text-blue-400" />
+          <Terminal size={14} strokeWidth={1.8} className="text-zinc-200" />
           <span className="text-zinc-300 font-semibold">{title}</span>
         </div>
         <button
@@ -75,12 +75,12 @@ export default function CypherHighlighter({ cypher, title = "Cypher Query" }) {
         >
           {copied ? (
             <>
-              <Check size={14} strokeWidth={1.8} className="text-blue-400" />
+              <Check size={14} strokeWidth={1.8} className="text-zinc-200" />
               <span className="font-bold">Copied!</span>
             </>
           ) : (
             <>
-              <Copy size={14} strokeWidth={1.8} className="text-blue-400" />
+              <Copy size={14} strokeWidth={1.8} className="text-zinc-200" />
               <span>Copy</span>
             </>
           )}

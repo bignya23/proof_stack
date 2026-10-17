@@ -16,8 +16,8 @@ export default function ApplyCommitPanel({
   if (!patch) {
     return (
       <div className="h-64 flex flex-col items-center justify-center text-center p-8 text-zinc-500 space-y-3 bg-[#000000] rounded-xl border border-zinc-800">
-        <div className="p-3 bg-zinc-900 rounded-full border border-zinc-800 text-blue-400">
-          <GitPullRequest size={24} strokeWidth={1.8} />
+        <div className="p-3 bg-zinc-900 rounded-full border border-zinc-800 text-zinc-300">
+          <GitPullRequest size={24} strokeWidth={1.8} className="text-zinc-200" />
         </div>
         <div className="space-y-1">
           <h4 className="text-sm font-semibold text-zinc-300">No Patch Generated Yet</h4>
@@ -44,7 +44,7 @@ export default function ApplyCommitPanel({
       <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Code size={16} strokeWidth={1.8} className="text-blue-400" />
+            <Code size={16} strokeWidth={1.8} className="text-zinc-200" />
             <span className="text-xs font-bold font-mono text-zinc-100">
               {patch.file_path}
             </span>
@@ -132,17 +132,17 @@ export default function ApplyCommitPanel({
         >
           {isApplying ? (
             <>
-              <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" />
+              <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-zinc-200" />
               <span>Applying Patch & Committing to Repository...</span>
             </>
           ) : appliedInfo ? (
             <>
-              <CircleCheck size={16} strokeWidth={1.8} className="text-blue-400" />
+              <CircleCheck size={16} strokeWidth={1.8} className="text-zinc-200" />
               <span>Committed to Main (SHA: {appliedInfo.commit_sha})</span>
             </>
           ) : (
             <>
-              <GitCommit size={16} strokeWidth={1.8} className="text-blue-400" />
+              <GitCommit size={16} strokeWidth={1.8} className="text-zinc-200" />
               <span>Apply Patch & Commit to Git</span>
             </>
           )}
@@ -153,7 +153,7 @@ export default function ApplyCommitPanel({
       {appliedInfo && (
         <div className="p-3.5 bg-zinc-950 border border-zinc-800 rounded-xl space-y-1.5 shadow-md">
           <div className="flex items-center space-x-1.5 text-blue-400 text-xs font-mono font-bold">
-            <CircleCheck size={16} strokeWidth={1.8} className="text-blue-400" />
+            <CircleCheck size={16} strokeWidth={1.8} className="text-zinc-200" />
             <span>Patch Successfully Committed & Recorded in FalkorDB!</span>
           </div>
           <p className="text-xs text-zinc-300 leading-relaxed font-sans">

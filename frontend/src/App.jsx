@@ -23,6 +23,87 @@ export default function App() {
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
 
+  // Resizable Sidebars State (persisted to localStorage)
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('proofstack_left_sidebar_width');
+      return saved ? Math.max(180, Math.min(600, parseInt(saved, 10))) : 260;
+    } catch {
+      return 260;
+    }
+  });
+
+  const [rightPanelWidth, setRightPanelWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('proofstack_right_panel_width');
+      return saved ? Math.max(280, Math.min(800, parseInt(saved, 10))) : 420;
+    } catch {
+      return 420;
+    }
+  });
+
+  const [isDraggingLeft, setIsDraggingLeft] = useState(false);
+  const [isDraggingRight, setIsDraggingRight] = useState(false);
+
+  const handleLeftResizeStart = (e) => {
+    e.preventDefault();
+    setIsDraggingLeft(true);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    const onMouseMove = (moveEvent) => {
+      // 48px is the width of ActivityBar
+      const newWidth = Math.max(180, Math.min(window.innerWidth * 0.45, moveEvent.clientX - 48));
+      setLeftSidebarWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      setIsDraggingLeft(false);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      setLeftSidebarWidth(current => {
+        try {
+          localStorage.setItem('proofstack_left_sidebar_width', String(Math.round(current)));
+        } catch {}
+        return current;
+      });
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleRightResizeStart = (e) => {
+    e.preventDefault();
+    setIsDraggingRight(true);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    const onMouseMove = (moveEvent) => {
+      const newWidth = Math.max(280, Math.min(window.innerWidth * 0.60, window.innerWidth - moveEvent.clientX));
+      setRightPanelWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      setIsDraggingRight(false);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      setRightPanelWidth(current => {
+        try {
+          localStorage.setItem('proofstack_right_panel_width', String(Math.round(current)));
+        } catch {}
+        return current;
+      });
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
   // Central Workspace Editor Tabs
   const [openTabs, setOpenTabs] = useState([
     { id: 'graph-tab', title: 'Graph Canvas', type: 'graph', closable: false }
@@ -82,9 +163,25 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/graph/${tenant}`);
       const data = await res.json();
+
+      // Exclude episodic memory nodes (Finding, Session) from visual graph topology
+      const cleanNodes = (data.nodes || []).filter(n => 
+        n.label !== 'Finding' && 
+        n.label !== 'Session' && 
+        n.label !== 'Memory' &&
+        !String(n.id).startsWith('mem-') &&
+        !String(n.id).startsWith('session-')
+      );
+      const cleanNodeIds = new Set(cleanNodes.map(n => String(n.id)));
+      const cleanLinks = (data.links || []).filter(l => {
+        const s = String(l.source?.id || l.source);
+        const t = String(l.target?.id || l.target);
+        return cleanNodeIds.has(s) && cleanNodeIds.has(t) && l.type !== 'RECORDED' && l.type !== 'ATTACHED_TO';
+      });
+
       setGraphData({
-        nodes: data.nodes || [],
-        links: data.links || []
+        nodes: cleanNodes,
+        links: cleanLinks
       });
     } catch (e) {
       console.error("Failed to fetch graph topology:", e);
@@ -184,10 +281,23 @@ export default function App() {
     setLiveThinkingMessage("Investigation paused.");
   };
 
+  const handleResetSession = () => {
+    setPrompt("");
+    setStreamingTrace([]);
+    setInvestigationResult(null);
+    setPatchAppliedInfo(null);
+    setLiveThinkingMessage("");
+    setIsStreaming(false);
+    setLoading(false);
+  };
+
   // =========================================================================
   // STREAMING AGENT INVESTIGATION VIA SSE
   // =========================================================================
-  const runInvestigation = async () => {
+  const runInvestigation = async (overridePrompt) => {
+    const activeQuery = (typeof overridePrompt === 'string' && overridePrompt.trim()) ? overridePrompt.trim() : prompt;
+    if (!activeQuery) return;
+    setPrompt(activeQuery);
     setLoading(true);
     setIsStreaming(true);
     setStreamingTrace([]);
@@ -204,7 +314,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         signal: abortControllerRef.current.signal,
         body: JSON.stringify({
-          prompt: prompt,
+          prompt: activeQuery,
           tenant_id: activeTenant,
           persist_new_memory: true
         })
@@ -249,7 +359,7 @@ export default function App() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: prompt,
+            prompt: activeQuery,
             tenant_id: activeTenant,
             persist_new_memory: true
           })
@@ -422,9 +532,12 @@ export default function App() {
           hasPatch={Boolean(investigationResult?.patch)}
         />
 
-        {/* PRIMARY LEFT SIDEBAR (COLLAPSIBLE) */}
+        {/* PRIMARY LEFT SIDEBAR (COLLAPSIBLE & RESIZABLE) */}
         {isSidebarOpen && (
           <LeftSidebar 
+            width={leftSidebarWidth}
+            onResizeStart={handleLeftResizeStart}
+            isResizing={isDraggingLeft}
             activeView={activeActivityView}
             activeTenant={activeTenant}
             onOpenFile={handleOpenFile}
@@ -467,14 +580,18 @@ export default function App() {
           activePatch={investigationResult?.patch}
         />
 
-        {/* RIGHT COPILOT PANEL (INCIDENT QUERY & LIVE STREAM) */}
+        {/* RIGHT COPILOT PANEL (INCIDENT QUERY & LIVE STREAM, RESIZABLE) */}
         {isRightPanelOpen && (
           <RightQueryPanel 
+            width={rightPanelWidth}
+            onResizeStart={handleRightResizeStart}
+            isResizing={isDraggingRight}
             onClose={() => setIsRightPanelOpen(false)}
             prompt={prompt}
             setPrompt={setPrompt}
             onRunInvestigation={runInvestigation}
             onStopInvestigation={handleStopInvestigation}
+            onResetSession={handleResetSession}
             isStreaming={isStreaming}
             loading={loading}
             liveThinkingMessage={liveThinkingMessage}
@@ -489,6 +606,11 @@ export default function App() {
             onOpenFiles={() => { setActiveActivityView('explorer'); setIsSidebarOpen(true); }}
             onOpenGraph={() => setActiveTabId('graph-tab')}
           />
+        )}
+
+        {/* Full-screen invisible overlay during resize to capture mouse movements over Monaco / Canvas */}
+        {(isDraggingLeft || isDraggingRight) && (
+          <div className="fixed inset-0 z-50 cursor-col-resize select-none" />
         )}
 
       </div>

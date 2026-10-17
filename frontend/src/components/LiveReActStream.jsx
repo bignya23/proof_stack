@@ -20,7 +20,7 @@ export default function LiveReActStream({
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
             </span>
           ) : (
-            <CircleCheck size={16} strokeWidth={1.8} className="text-blue-400" />
+            <CircleCheck size={16} strokeWidth={1.8} className="text-zinc-200" />
           )}
           <span className="text-zinc-100 font-bold tracking-tight">
             {!isComplete ? "Live ReAct Loop" : "Investigation Complete"}
@@ -28,7 +28,7 @@ export default function LiveReActStream({
         </div>
 
         <div className="text-[10px] font-mono text-zinc-500 flex items-center space-x-1.5">
-          <Cpu size={14} strokeWidth={1.8} className="text-blue-400" />
+          <Cpu size={14} strokeWidth={1.8} className="text-zinc-200" />
           <span>Step {streamingTrace.length}</span>
         </div>
       </div>
@@ -37,9 +37,9 @@ export default function LiveReActStream({
       {liveMessage && (
         <div className="p-2.5 bg-[#000000] border border-zinc-800 rounded-lg text-xs font-mono text-zinc-300 flex items-center space-x-2">
           {!isComplete ? (
-            <RefreshCw size={14} strokeWidth={1.8} className="text-blue-400 animate-spin shrink-0" />
+            <RefreshCw size={14} strokeWidth={1.8} className="text-zinc-200 animate-spin shrink-0" />
           ) : (
-            <Sparkles size={14} strokeWidth={1.8} className="text-blue-400 shrink-0" />
+            <Sparkles size={14} strokeWidth={1.8} className="text-zinc-200 shrink-0" />
           )}
           <span className="leading-relaxed">{liveMessage}</span>
         </div>
@@ -61,9 +61,9 @@ export default function LiveReActStream({
               >
                 <div className="flex items-center space-x-2 min-w-0">
                   {isRunning ? (
-                    <RefreshCw size={14} strokeWidth={1.8} className="text-blue-400 animate-spin shrink-0" />
+                    <RefreshCw size={14} strokeWidth={1.8} className="text-zinc-200 animate-spin shrink-0" />
                   ) : (
-                    <CircleCheck size={14} strokeWidth={1.8} className="text-blue-400 shrink-0" />
+                    <CircleCheck size={14} strokeWidth={1.8} className="text-zinc-200 shrink-0" />
                   )}
                   <span className="text-zinc-500 text-[10px]">
                     {String(step.step).padStart(2, '0')}

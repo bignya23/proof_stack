@@ -55,8 +55,8 @@ export default function EvidenceRegistry({
   if (!evidence || evidence.length === 0) {
     return (
       <div className="h-64 flex flex-col items-center justify-center text-center p-8 text-zinc-500 space-y-3 bg-[#000000] rounded-xl border border-zinc-800">
-        <div className="p-3 bg-zinc-900 rounded-full border border-zinc-800 text-blue-400">
-          <Database size={24} strokeWidth={1.8} />
+        <div className="p-3 bg-zinc-900 rounded-full border border-zinc-800 text-zinc-300">
+          <Database size={24} strokeWidth={1.8} className="text-zinc-200" />
         </div>
         <div className="space-y-1">
           <h4 className="text-sm font-semibold text-zinc-300">Evidence Registry</h4>
@@ -115,7 +115,7 @@ export default function EvidenceRegistry({
       {/* Filter Chips (Button text strictly in blue) */}
       <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 text-[11px] font-mono">
         <span className="text-zinc-500 flex items-center space-x-1 mr-1">
-          <Filter size={14} strokeWidth={1.8} className="text-zinc-500" />
+          <Filter size={14} strokeWidth={1.8} className="text-zinc-300" />
           <span>Filter:</span>
         </span>
         <button
@@ -217,7 +217,7 @@ export default function EvidenceRegistry({
                         title="Highlight node on graph"
                       >
                         <span>{node}</span>
-                        <ArrowUpRight size={12} strokeWidth={1.8} className="opacity-60 text-blue-400" />
+                        <ArrowUpRight size={12} strokeWidth={1.8} className="text-zinc-300" />
                       </button>
                     );
                   })}
@@ -232,9 +232,9 @@ export default function EvidenceRegistry({
                     className="flex items-center space-x-1.5 text-[10px] font-mono text-blue-400 hover:text-blue-300 transition"
                   >
                     {cypherExpanded ? (
-                      <ChevronDown size={14} strokeWidth={1.8} className="text-blue-400" />
+                      <ChevronDown size={14} strokeWidth={1.8} className="text-zinc-300" />
                     ) : (
-                      <ChevronRight size={14} strokeWidth={1.8} className="text-blue-400" />
+                      <ChevronRight size={14} strokeWidth={1.8} className="text-zinc-300" />
                     )}
                     <span className="font-semibold text-blue-400">
                       cypher_used

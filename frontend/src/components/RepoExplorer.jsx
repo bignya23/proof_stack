@@ -144,9 +144,9 @@ export default function RepoExplorer({
       >
         <div className="flex items-center space-x-2 truncate">
           {!isFile ? (
-            node.isOpen ? <FolderOpen size={16} strokeWidth={1.8} className="text-zinc-400 shrink-0" /> : <Folder size={16} strokeWidth={1.8} className="text-zinc-500 shrink-0" />
+            node.isOpen ? <FolderOpen size={16} strokeWidth={1.8} className="text-zinc-300 shrink-0" /> : <Folder size={16} strokeWidth={1.8} className="text-zinc-400 shrink-0" />
           ) : (
-            <FileCode size={16} strokeWidth={1.8} className={`shrink-0 ${node.data.language === 'python' ? 'text-blue-400' : 'text-zinc-500'}`} />
+            <FileCode size={16} strokeWidth={1.8} className={`shrink-0 ${node.data.language === 'python' ? 'text-zinc-200' : 'text-zinc-400'}`} />
           )}
           
           <span className="truncate">{node.data.name}</span>
@@ -160,7 +160,7 @@ export default function RepoExplorer({
           <div className="flex items-center space-x-1.5 shrink-0">
             {node.data.indexed && (
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-900 text-blue-400 border border-zinc-800 flex items-center space-x-1" title="FalkorDB AST Indexed">
-                <CircleCheck size={12} strokeWidth={1.8} className="text-blue-400" />
+                <CircleCheck size={12} strokeWidth={1.8} className="text-zinc-200" />
                 <span>Indexed</span>
               </span>
             )}
@@ -198,10 +198,10 @@ export default function RepoExplorer({
           </div>
           <button 
             onClick={fetchRepoTree}
-            className="p-1 text-zinc-400 hover:text-blue-400 rounded hover:bg-zinc-900 transition"
+            className="p-1 text-zinc-300 hover:text-white rounded hover:bg-zinc-900 transition"
             title="Refresh Repository Tree"
           >
-            <RefreshCw size={14} strokeWidth={1.8} className={loading ? 'animate-spin text-blue-400' : 'text-zinc-400'} />
+            <RefreshCw size={14} strokeWidth={1.8} className={loading ? 'animate-spin text-zinc-200' : 'text-zinc-300'} />
           </button>
         </div>
 
@@ -209,7 +209,7 @@ export default function RepoExplorer({
         {repoData?.current_commit && (
           <div className="bg-[#000000] border border-zinc-800 rounded-lg p-2 flex items-center justify-between text-xs font-mono">
             <div className="flex items-center space-x-2 truncate">
-              <GitCommit size={16} strokeWidth={1.8} className="text-blue-400 shrink-0" />
+              <GitCommit size={16} strokeWidth={1.8} className="text-zinc-200 shrink-0" />
               <div className="truncate">
                 <span className="text-blue-400 font-bold mr-1.5">{repoData.current_commit.short_sha}</span>
                 <span className="text-zinc-300 truncate">{repoData.current_commit.message}</span>
@@ -238,7 +238,7 @@ export default function RepoExplorer({
       {/* ================= 2. SEARCH BAR (BY FILENAME & SYMBOL) ================= */}
       <div className="p-2 border-b border-zinc-800 bg-[#09090b]">
         <div className="relative">
-          <Search size={16} strokeWidth={1.8} className="text-zinc-500 absolute left-2.5 top-2.5" />
+          <Search size={16} strokeWidth={1.8} className="text-zinc-300 absolute left-2.5 top-2.5" />
           <input
             type="text"
             value={searchTerm}
@@ -269,11 +269,11 @@ export default function RepoExplorer({
                     }`}
                   >
                     <div className="flex items-center space-x-2 truncate">
-                      <FileCode size={16} strokeWidth={1.8} className="text-blue-400 shrink-0" />
+                      <FileCode size={16} strokeWidth={1.8} className="text-zinc-200 shrink-0" />
                       <span className="font-bold">{f.name}</span>
                     </div>
                     <span className="text-[10px] text-blue-400 flex items-center space-x-1">
-                      <CircleCheck size={12} strokeWidth={1.8} />
+                      <CircleCheck size={12} strokeWidth={1.8} className="text-zinc-200" />
                       <span>Indexed</span>
                     </span>
                   </div>
@@ -323,7 +323,7 @@ export default function RepoExplorer({
           {selectedFile ? (
             <div className="px-3 py-2 border-b border-zinc-800 bg-[#09090b] flex items-center justify-between text-xs font-mono">
               <div className="flex items-center space-x-2 truncate">
-                <FileCode size={16} strokeWidth={1.8} className="text-blue-400 shrink-0" />
+                <FileCode size={16} strokeWidth={1.8} className="text-zinc-200 shrink-0" />
                 <span className="font-bold text-zinc-100 truncate">{selectedFile.name}</span>
                 <span className="text-[10px] text-zinc-500 truncate">{selectedFile.path}</span>
               </div>
@@ -334,7 +334,7 @@ export default function RepoExplorer({
                     onClick={() => setShowDiffView(!showDiffView)}
                     className="text-[10px] px-2 py-1 rounded border font-semibold transition flex items-center space-x-1 text-blue-400 bg-zinc-900 border-zinc-800 hover:border-blue-500"
                   >
-                    <GitPullRequest size={14} strokeWidth={1.8} className="text-blue-400" />
+                    <GitPullRequest size={14} strokeWidth={1.8} className="text-zinc-200" />
                     <span>{showDiffView ? "View Source" : "View Patch Diff"}</span>
                   </button>
                 )}
@@ -375,7 +375,7 @@ export default function RepoExplorer({
           <div className="flex-1 relative overflow-hidden bg-[#000000]">
             {fileLoading ? (
               <div className="h-full flex items-center justify-center text-xs text-zinc-400 space-x-2">
-                <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" />
+                <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-zinc-200" />
                 <span>Loading source code for {selectedFile?.name}...</span>
               </div>
             ) : showDiffView && activePatch ? (
@@ -417,7 +417,7 @@ export default function RepoExplorer({
               />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-xs text-zinc-500 space-y-1">
-                <Code2 size={24} strokeWidth={1.8} className="text-zinc-600" />
+                <Code2 size={24} strokeWidth={1.8} className="text-zinc-400" />
                 <span>No file opened</span>
               </div>
             )}

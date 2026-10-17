@@ -48,8 +48,8 @@ export default function ActivityBar({
               onClick={() => handleItemClick(item.id)}
               className={`relative w-10 h-10 rounded-md flex items-center justify-center transition group ${
                 isActive 
-                  ? "text-blue-400 bg-zinc-900" 
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50"
+                  ? "text-zinc-100 bg-zinc-900" 
+                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/50"
               }`}
               title={item.label}
             >
@@ -65,7 +65,7 @@ export default function ActivityBar({
                 <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-400 ring-2 ring-[#09090b]"></span>
               )}
               {item.count > 0 && (
-                <span className="absolute bottom-1 right-1 text-[9px] font-mono px-1 rounded-full bg-zinc-900 text-blue-400 border border-blue-500/40 leading-none">
+                <span className="absolute bottom-1 right-1 text-[9px] font-mono px-1 rounded-full bg-zinc-900 text-zinc-200 border border-zinc-700 leading-none">
                   {item.count}
                 </span>
               )}
@@ -81,8 +81,8 @@ export default function ActivityBar({
           onClick={() => setIsConsoleOpen(!isConsoleOpen)}
           className={`w-10 h-10 rounded-md flex items-center justify-center transition ${
             isConsoleOpen 
-              ? "text-blue-400 bg-zinc-900" 
-              : "text-zinc-500 hover:text-blue-400 hover:bg-zinc-900/50"
+              ? "text-zinc-100 bg-zinc-900" 
+              : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/50"
           }`}
           title={isConsoleOpen ? "Hide Terminal" : "Show Terminal"}
         >
@@ -92,7 +92,7 @@ export default function ActivityBar({
         {/* Toggle Sidebar Collapse */}
         <button
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="w-10 h-10 rounded-md flex items-center justify-center text-zinc-500 hover:text-blue-400 hover:bg-zinc-900/50 transition"
+          className="w-10 h-10 rounded-md flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/50 transition"
           title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
         >
           {isSidebarOpen ? (

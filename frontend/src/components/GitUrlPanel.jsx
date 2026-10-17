@@ -30,7 +30,7 @@ export default function GitUrlPanel({
       {/* Intro Header */}
       <div className="space-y-1">
         <h3 className="text-xs font-bold text-zinc-200 flex items-center space-x-1.5 font-mono">
-          <FolderGit2 size={16} strokeWidth={1.8} className="text-blue-400" />
+          <FolderGit2 size={16} strokeWidth={1.8} className="text-zinc-200" />
           <span>Codebase & Knowledge Graph Ingestion</span>
         </h3>
         <p className="text-xs text-zinc-400 leading-relaxed font-sans">
@@ -47,7 +47,7 @@ export default function GitUrlPanel({
             onClick={() => handleSelectPreset("./sample_fintech_repo", "sample-fintech")}
             className="text-[11px] px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-blue-400 hover:border-blue-500/50 hover:bg-zinc-850 transition flex items-center space-x-1.5 font-mono"
           >
-            <FolderGit2 size={14} strokeWidth={1.8} className="text-blue-400" />
+            <FolderGit2 size={14} strokeWidth={1.8} className="text-zinc-200" />
             <span>Sample Fintech Repo (Local)</span>
           </button>
           <button
@@ -55,7 +55,7 @@ export default function GitUrlPanel({
             onClick={() => handleSelectPreset("https://github.com/fastapi/fastapi", "fastapi-demo")}
             className="text-[11px] px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-blue-400 hover:border-blue-500/50 hover:bg-zinc-850 transition flex items-center space-x-1.5 font-mono"
           >
-            <Database size={14} strokeWidth={1.8} className="text-blue-400" />
+            <Database size={14} strokeWidth={1.8} className="text-zinc-200" />
             <span>FastAPI GitHub Repo</span>
           </button>
         </div>
@@ -97,12 +97,12 @@ export default function GitUrlPanel({
         >
           {isIngesting ? (
             <>
-              <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400" />
+              <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-zinc-200" />
               <span>Parsing AST & Ingesting into FalkorDB...</span>
             </>
           ) : (
             <>
-              <Database size={16} strokeWidth={1.8} className="text-blue-400" />
+              <Database size={16} strokeWidth={1.8} className="text-zinc-200" />
               <span>Ingest Repository into FalkorDB</span>
             </>
           )}
@@ -121,7 +121,7 @@ export default function GitUrlPanel({
           {ingestStatus.toLowerCase().includes("success") ? (
             <CircleCheck size={16} strokeWidth={1.8} className="text-emerald-400 shrink-0" />
           ) : (
-            <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-blue-400 shrink-0" />
+            <RefreshCw size={16} strokeWidth={1.8} className="animate-spin text-zinc-200 shrink-0" />
           )}
           <span>{ingestStatus}</span>
         </div>
@@ -130,7 +130,7 @@ export default function GitUrlPanel({
       {/* FalkorDB Ingest Architecture Info */}
       <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2 text-[11px] text-zinc-400 font-mono">
         <div className="font-semibold text-zinc-300 flex items-center space-x-1.5">
-          <Layers size={14} strokeWidth={1.8} className="text-blue-400" />
+          <Layers size={14} strokeWidth={1.8} className="text-zinc-200" />
           <span>FalkorDB Graph Entities Ingested</span>
         </div>
         <ul className="space-y-1 list-disc list-inside text-zinc-400 pl-1 text-[10px]">
