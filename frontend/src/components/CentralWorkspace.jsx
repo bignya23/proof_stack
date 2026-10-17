@@ -3,12 +3,13 @@ import React, { useRef, useState, useEffect } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { 
   Network, FileCode, Database, X, ChevronUp, 
-  ChevronDown, Terminal, RefreshCw, CircleCheck, GitPullRequest 
+  ChevronDown, Terminal, RefreshCw, CircleCheck, GitPullRequest, FileText 
 } from 'lucide-react';
 
 import GraphCanvas from './GraphCanvas';
 import EvidenceRegistry from './EvidenceRegistry';
 import LiveReActStream from './LiveReActStream';
+import InvestigationReportTab from './InvestigationReportTab';
 
 const API_BASE = "http://localhost:8000";
 
@@ -34,8 +35,14 @@ export default function CentralWorkspace({
   // Console Drawer
   isConsoleOpen,
   setIsConsoleOpen,
-  // Patch
-  activePatch = null
+  // Patch & Report
+  activePatch = null,
+  investigationResult = null,
+  onSuggestPatch,
+  isGeneratingPatch,
+  onOpenDiff,
+  onOpenCommitTab,
+  onOpenFile,
 }) {
   const [fileContent, setFileContent] = useState(null);
   const [fileLoading, setFileLoading] = useState(false);
@@ -156,6 +163,7 @@ export default function CentralWorkspace({
               {tab.type === 'file' && <FileCode size={16} strokeWidth={1.8} className="text-zinc-200" />}
               {tab.type === 'evidence' && <Database size={16} strokeWidth={1.8} className="text-zinc-200" />}
               {tab.type === 'diff' && <GitPullRequest size={16} strokeWidth={1.8} className="text-amber-400" />}
+              {tab.type === 'report' && <FileText size={16} strokeWidth={1.8} className="text-blue-400" />}
               
               <span className="truncate max-w-[140px]">{tab.title}</span>
 
@@ -315,6 +323,22 @@ export default function CentralWorkspace({
                 }}
               />
             </div>
+          </div>
+        )}
+
+        {/* INVESTIGATION & EVIDENCE AUDIT REPORT VIEW */}
+        {activeTab?.type === 'report' && (
+          <div className="flex-1 h-full overflow-hidden bg-[#000000]">
+            <InvestigationReportTab 
+              investigationResult={investigationResult}
+              activeTenant={activeTenant}
+              onSuggestPatch={onSuggestPatch}
+              isGeneratingPatch={isGeneratingPatch}
+              onOpenDiff={onOpenDiff}
+              onOpenCommitTab={onOpenCommitTab}
+              onSelectNode={onSelectNodeByName}
+              onOpenFile={onOpenFile}
+            />
           </div>
         )}
 

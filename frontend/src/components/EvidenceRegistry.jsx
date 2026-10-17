@@ -41,6 +41,27 @@ const STATUS_CONFIG = {
     dot: "bg-zinc-400",
     icon: AlertCircle,
     description: "Observed in telemetry"
+  },
+  provenance_observed: {
+    label: "Provenance",
+    color: "bg-zinc-900 text-purple-300 border-zinc-800",
+    dot: "bg-purple-400",
+    icon: ShieldCheck,
+    description: "Verified via Git commit / ADR lineage"
+  },
+  syntax_valid: {
+    label: "Sandbox Valid",
+    color: "bg-zinc-900 text-emerald-300 border-zinc-800",
+    dot: "bg-emerald-400",
+    icon: CircleCheck,
+    description: "AST parse verified in sandbox simulation"
+  },
+  confirmed: {
+    label: "Confirmed",
+    color: "bg-zinc-900 text-green-300 border-zinc-800",
+    dot: "bg-green-400",
+    icon: CircleCheck,
+    description: "Confirmed evidence in FalkorDB"
   }
 };
 

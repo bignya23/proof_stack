@@ -2,7 +2,8 @@
 import React, { useState } from 'react';
 import { 
   X, Plus, Square, ArrowUp, Sparkles, Database, 
-  GitPullRequest, Check, RefreshCw, ArrowUpRight
+  GitPullRequest, Check, RefreshCw, ArrowUpRight,
+  FileText, Wrench, Copy
 } from 'lucide-react';
 
 const SAMPLE_QUERIES = [
@@ -37,11 +38,15 @@ export default function RightQueryPanel({
   llmStatus,
   onOpenEvidenceTab,
   onOpenCommitTab,
+  onOpenReportTab,
+  onSuggestPatch,
+  isGeneratingPatch,
   width = 420,
   onResizeStart,
   isResizing = false
 }) {
   const [inputText, setInputText] = useState("");
+  const [copied, setCopied] = useState(false);
   const [activeQuery, setActiveQuery] = useState(() => {
     return (investigationResult || (streamingTrace && streamingTrace.length > 0)) ? prompt : null;
   });
@@ -216,52 +221,140 @@ export default function RightQueryPanel({
           </div>
         )}
 
-        {/* Synthesis Result Card (rendered when complete) */}
-        {investigationResult?.synthesis && (
-          <div className="p-3.5 bg-[#18181b] border border-zinc-800 rounded-xl space-y-2.5 text-xs animate-in fade-in duration-200">
-            <div className="flex items-center justify-between text-blue-400 font-mono font-bold text-xs">
-              <span className="flex items-center space-x-1.5">
-                <Sparkles size={16} strokeWidth={1.8} className="text-zinc-200" />
-                <span>{Boolean(activePatch?.diff) ? "Investigation & Patch Complete" : "Analysis Complete"}</span>
-              </span>
-              {investigationResult.synthesis.governing_adr && 
-               investigationResult.synthesis.governing_adr !== "Not found in indexed provenance." && (
-                <span className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-300 border border-zinc-800 text-[10px]">
-                  {investigationResult.synthesis.governing_adr}
-                </span>
-              )}
-            </div>
+        {/* Synthesis / Response Rendering */}
+        {investigationResult?.synthesis && (() => {
+          const isDirect = investigationResult.synthesis.response_type === "direct_response";
+          const hasEvidence = Boolean(investigationResult.evidence_registry?.length);
+          const hasHops = Boolean(investigationResult.execution_path?.nodes?.length);
+          const hasPatchDiff = Boolean(activePatch?.diff && activePatch.diff.trim());
+          const isSimple = isDirect || (!hasEvidence && !hasHops && !hasPatchDiff);
 
-            <div className="text-zinc-100 font-medium text-xs leading-relaxed font-sans">
-              {investigationResult.synthesis.headline}
-            </div>
+          const responseText = 
+            investigationResult.synthesis.message || 
+            investigationResult.synthesis.action_plan || 
+            investigationResult.synthesis.headline || 
+            "No response generated.";
 
-            {investigationResult.synthesis.action_plan && (
-              <div className="p-2.5 bg-[#121214] rounded-lg border border-zinc-850 text-[11px] text-zinc-300 leading-relaxed font-sans">
-                {investigationResult.synthesis.action_plan}
+          if (isSimple) {
+            return (
+              <div className="p-4 bg-[#18181b] border border-zinc-800 rounded-2xl space-y-2.5 text-xs animate-in fade-in duration-200 shadow-sm">
+                <div className="flex items-center justify-between pb-1.5 border-b border-zinc-800/60">
+                  <span className="flex items-center space-x-1.5 text-blue-400 font-medium text-xs font-sans">
+                    <Sparkles size={13} className="text-blue-400" />
+                    <span className="text-zinc-200 font-semibold">Response</span>
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(responseText);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }}
+                    className="hover:text-zinc-200 transition flex items-center space-x-1 text-zinc-400 hover:text-zinc-200 text-[11px]"
+                    title="Copy response"
+                  >
+                    {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                    <span>{copied ? "Copied" : "Copy"}</span>
+                  </button>
+                </div>
+
+                <div className="text-zinc-200 text-xs leading-relaxed font-sans whitespace-pre-line select-text">
+                  {responseText}
+                </div>
               </div>
-            )}
+            );
+          }
 
-            <div className="pt-1 flex items-center space-x-2">
-              <button
-                onClick={onOpenEvidenceTab}
-                className="flex-1 py-1.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-blue-400 rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1"
-              >
-                <Database size={13} strokeWidth={1.8} className="text-zinc-200" />
-                <span>Evidence ({investigationResult.evidence_registry?.length || 0})</span>
-              </button>
-              {Boolean(activePatch?.diff) && (
-                <button
-                  onClick={onOpenCommitTab}
-                  className="flex-1 py-1.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-blue-400 rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1"
-                >
-                  <GitPullRequest size={13} strokeWidth={1.8} className="text-zinc-200" />
-                  <span>Review Patch</span>
-                </button>
+          return (
+            <div className="p-3.5 bg-[#18181b] border border-zinc-800 rounded-xl space-y-2.5 text-xs animate-in fade-in duration-200">
+              <div className="flex items-center justify-between text-blue-400 font-mono font-bold text-xs">
+                <span className="flex items-center space-x-1.5">
+                  <Sparkles size={16} strokeWidth={1.8} className="text-zinc-200" />
+                  <span>
+                    {hasPatchDiff
+                      ? "Investigation & Patch Complete"
+                      : "Analysis Complete"}
+                  </span>
+                </span>
+                {investigationResult.synthesis.governing_adr && 
+                 investigationResult.synthesis.governing_adr !== "Not found in indexed provenance." && 
+                 !investigationResult.synthesis.governing_adr.startsWith("N/A") && (
+                  <span className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-300 border border-zinc-800 text-[10px]">
+                    {investigationResult.synthesis.governing_adr}
+                  </span>
+                )}
+              </div>
+
+              <div className="text-zinc-100 font-medium text-xs leading-relaxed font-sans">
+                {investigationResult.synthesis.headline}
+              </div>
+
+              {investigationResult.synthesis.action_plan && (
+                <div className="p-2.5 bg-[#121214] rounded-lg border border-zinc-850 text-[11px] text-zinc-300 leading-relaxed font-sans whitespace-pre-line">
+                  {investigationResult.synthesis.action_plan}
+                </div>
               )}
+
+              <div className="pt-1.5 flex flex-col gap-2">
+                {/* Primary Action Row: Evidence Report Tab & Suggest Patch / Review Patch */}
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={onOpenReportTab}
+                    className="flex-1 py-1.5 px-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1.5 shadow-sm active:scale-98"
+                    title="Open interactive Evidence Audit Report tab in middle window"
+                  >
+                    <FileText size={13} strokeWidth={1.8} />
+                    <span>Evidence Report</span>
+                  </button>
+
+                  {!hasPatchDiff ? (
+                    <button
+                      onClick={onSuggestPatch}
+                      disabled={isGeneratingPatch}
+                      className="flex-1 py-1.5 px-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-blue-400 hover:text-blue-300 rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1.5 shadow-sm disabled:opacity-50 active:scale-98"
+                      title="Generate AST-verified remediation patch diff"
+                    >
+                      {isGeneratingPatch ? (
+                        <RefreshCw size={13} className="animate-spin text-blue-400" />
+                      ) : (
+                        <Wrench size={13} strokeWidth={1.8} />
+                      )}
+                      <span>{isGeneratingPatch ? "Simulating..." : "Suggest a Patch"}</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={onOpenCommitTab}
+                      className="flex-1 py-1.5 px-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-emerald-400 hover:text-emerald-300 rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1.5 shadow-sm active:scale-98"
+                      title="Review unified patch diff in editor and Source Control"
+                    >
+                      <GitPullRequest size={13} strokeWidth={1.8} />
+                      <span>Review Patch (Diff)</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Secondary Navigation Row: Evidence Count & Source Control status */}
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={onOpenEvidenceTab}
+                    className="flex-1 py-1 bg-zinc-900/60 hover:bg-zinc-850 border border-zinc-850 text-zinc-400 hover:text-zinc-200 rounded text-[10px] font-sans font-medium transition flex items-center justify-center space-x-1"
+                  >
+                    <Database size={12} strokeWidth={1.8} />
+                    <span>Evidence Registry ({investigationResult.evidence_registry?.length || 0})</span>
+                  </button>
+                  {hasPatchDiff && (
+                    <button
+                      onClick={onOpenCommitTab}
+                      className="flex-1 py-1 bg-zinc-900/60 hover:bg-zinc-850 border border-zinc-850 text-amber-400 hover:text-amber-300 rounded text-[10px] font-sans font-medium transition flex items-center justify-center space-x-1 font-mono"
+                    >
+                      <span className="font-bold text-[10px]">M</span>
+                      <span>Source Control (1)</span>
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
       </div>
 

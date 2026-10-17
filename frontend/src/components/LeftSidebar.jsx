@@ -72,6 +72,8 @@ export default function LeftSidebar({
   const [isChangesListOpen, setIsChangesListOpen] = useState(true);
   const [isCommitsOpen, setIsCommitsOpen] = useState(true);
 
+  const hasRealPatch = Boolean(patch && patch.diff && patch.diff.trim());
+
   // Sync commit message from patch if available
   useEffect(() => {
     if (patch?.commit_message && !commitMessage) {
@@ -374,7 +376,7 @@ export default function LeftSidebar({
                     </button>
                     <button 
                       onClick={() => onApplyPatch && onApplyPatch(commitMessage)}
-                      disabled={!patch || isApplyingPatch}
+                      disabled={!hasRealPatch || isApplyingPatch}
                       className="p-1 hover:text-white rounded hover:bg-zinc-800/60 disabled:opacity-30" 
                       title="Commit Changes"
                     >
@@ -382,7 +384,7 @@ export default function LeftSidebar({
                     </button>
                     <button 
                       onClick={onDiscardPatch}
-                      disabled={!patch}
+                      disabled={!hasRealPatch}
                       className="p-1 hover:text-white rounded hover:bg-zinc-800/60 disabled:opacity-30" 
                       title="Discard Changes"
                     >
@@ -402,7 +404,7 @@ export default function LeftSidebar({
                     onChange={(e) => setCommitMessage(e.target.value)}
                     onKeyDown={(e) => {
                       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                        if (patch && !isApplyingPatch) {
+                        if (hasRealPatch && !isApplyingPatch) {
                           onApplyPatch(commitMessage);
                         }
                       }
@@ -431,7 +433,7 @@ export default function LeftSidebar({
                 <div className="flex items-stretch rounded overflow-hidden shadow-sm">
                   <button
                     onClick={() => onApplyPatch && onApplyPatch(commitMessage)}
-                    disabled={!patch || isApplyingPatch}
+                    disabled={!hasRealPatch || isApplyingPatch}
                     className="flex-1 py-1.5 px-3 bg-[#0078d4] hover:bg-[#006cc1] text-white text-xs font-medium transition flex items-center justify-center space-x-1.5 disabled:opacity-40 disabled:hover:bg-[#0078d4]"
                   >
                     {isApplyingPatch ? (
@@ -443,7 +445,7 @@ export default function LeftSidebar({
                   </button>
                   <div className="w-[1px] bg-[#0062ab]" />
                   <button
-                    disabled={!patch || isApplyingPatch}
+                    disabled={!hasRealPatch || isApplyingPatch}
                     className="px-2 bg-[#0078d4] hover:bg-[#006cc1] text-white flex items-center justify-center disabled:opacity-40"
                     title="Commit Options"
                   >
@@ -473,62 +475,41 @@ export default function LeftSidebar({
                       <span>Changes</span>
                     </div>
                     <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-zinc-800 text-zinc-300">
-                      {patch ? 1 : 0}
+                      {hasRealPatch ? 1 : 0}
                     </span>
                   </div>
 
                   {isChangesListOpen && (
                     <div>
-                      {patch ? (
+                      {hasRealPatch ? (
                         <div
                           onClick={() => onOpenDiff && onOpenDiff(patch)}
-                          className="flex items-center justify-between px-2 py-1 rounded hover:bg-zinc-900/80 cursor-pointer group transition text-xs"
+                          className="flex items-center justify-between px-2 py-1.5 rounded bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-850 hover:border-blue-500/50 cursor-pointer group transition text-xs"
+                          title="Click to open diff viewer in middle window"
                         >
                           <div className="flex items-center space-x-2 truncate min-w-0">
                             {getFileIcon(patch.file_path)}
-                            <span className="text-zinc-200 font-medium truncate font-sans">
-                              {patch.file_path ? patch.file_path.split('/').pop() : 'modified_file'}
-                            </span>
-                            <span className="text-zinc-500 text-[11px] font-sans truncate">
-                              {patch.file_path && patch.file_path.includes('/')
-                                ? patch.file_path.substring(0, patch.file_path.lastIndexOf('/'))
-                                : '.'}
-                            </span>
+                            <div className="flex flex-col truncate min-w-0">
+                              <span className="text-zinc-200 font-medium truncate font-sans">
+                                {patch.file_path ? patch.file_path.split('/').pop() : 'modified_file'}
+                              </span>
+                              <span className="text-zinc-500 text-[10px] font-mono truncate">
+                                {patch.file_path && patch.file_path.includes('/')
+                                  ? patch.file_path.substring(0, patch.file_path.lastIndexOf('/'))
+                                  : 'root'}
+                              </span>
+                            </div>
                           </div>
 
                           <div className="flex items-center space-x-1.5 shrink-0 ml-1">
-                            {/* Hover Action Icons */}
-                            <div className="opacity-0 group-hover:opacity-100 flex items-center space-x-1 transition-opacity">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onOpenDiff && onOpenDiff(patch);
-                                }}
-                                className="p-0.5 hover:text-white text-zinc-400 rounded hover:bg-zinc-800"
-                                title="Open Diff"
-                              >
-                                <FileDiff size={13} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDiscardPatch && onDiscardPatch();
-                                }}
-                                className="p-0.5 hover:text-white text-zinc-400 rounded hover:bg-zinc-800"
-                                title="Discard Changes"
-                              >
-                                <RotateCcw size={13} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                }}
-                                className="p-0.5 hover:text-white text-zinc-400 rounded hover:bg-zinc-800"
-                                title="Stage Changes"
-                              >
-                                <Plus size={13} />
-                              </button>
-                            </div>
+                            {/* Validation Badge */}
+                            <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                              {patch.validation_status || "syntax_valid"}
+                            </span>
+                            {/* Diff Line Count Stats */}
+                            <span className="text-[10px] font-mono text-zinc-400">
+                              +{patch.validation?.lines_added || 2}/-{patch.validation?.lines_deleted || 2}
+                            </span>
                             {/* Status Badge 'M' for Modified */}
                             <span className="text-amber-400 font-bold font-mono text-xs px-1" title="Modified">
                               M
@@ -536,8 +517,8 @@ export default function LeftSidebar({
                           </div>
                         </div>
                       ) : (
-                        <div className="text-zinc-500 text-[11px] italic px-3 py-1.5 font-sans">
-                          No changes detected.
+                        <div className="text-zinc-500 text-[11px] italic px-3 py-2 font-sans bg-zinc-950/60 rounded border border-zinc-900 text-center">
+                          No working tree changes staged. Run an analysis and click &quot;Suggest a Patch&quot; to generate an isolated, verified fix.
                         </div>
                       )}
                     </div>
