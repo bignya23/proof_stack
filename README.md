@@ -14,7 +14,7 @@
 
 Traditional AI coding assistants treat software repositories as unstructured text files, relying on lexical grep searches that fail on complex call graphs and frequently hallucinate non-existent execution paths.
 
-**ProofStack** addresses this vulnerability by using **FalkorDB** as the deterministic, load-bearing brain for software incident triage and code remediation. ProofStack parses source code into an Abstract Syntax Tree (AST) code graph, resolves static call relationships, and links code entities directly to Git commit histories and Architectural Decision Records (ADRs). 
+**ProofStack** addresses this vulnerability by using **FalkorDB** as the central, load-bearing brain for software incident triage and code remediation. ProofStack parses source code into an Abstract Syntax Tree (AST) code graph, resolves static call relationships, and links code entities directly to Git commit histories and Architectural Decision Records (ADRs). 
 
 During an operational incident, the autonomous agent executes openCypher traversals, computes upstream blast radiuses via GraphBLAS, identifies historical code provenance, and generates AST-verified unified diff patches with zero working-tree mutations until explicit human approval.
 
@@ -29,7 +29,7 @@ During an operational incident, the autonomous agent executes openCypher travers
 | **GraphBLAS Centrality & Hotspots** | Identifies critical architectural bottlenecks and structural risk areas across the graph. | Native `algo.pageRank` computation over directed call graph edges. |
 | **Company Brain & Provenance** | Traces code authorship, historic commit diffs, and governing architectural policies. | Traversals across `[:CHANGED]`, `[:AUTHORED_BY]`, and `[:GOVERNED_BY]` relationships. |
 | **AST-Verified Remediation** | Synthesizes and tests code diffs in memory against Python syntax trees before presentation. | Verification pipeline (`ast.parse()`) combined with protected commit operations (`/api/patch/apply`). |
-| **Auditable Evidence Registry** | Every claim in the incident report is paired with its exact openCypher query and source line. | Parameterized query logs with execution coordinates (`file:line`) and deterministic audit schema. |
+| **Auditable Audit Registry** | Every claim in the incident report is paired with its exact openCypher query and source line. | Parameterized query logs with execution coordinates (`file:line`) and structured verification schema. |
 
 ---
 
@@ -41,7 +41,6 @@ flowchart TD
     
     subgraph MultiAgentEngine["Autonomous Reasoning Engine"]
         Agent[ProofStack ReAct Loop]
-        Reporter[Deterministic Evidence Auditor]
         Validator[AST Syntax Validator]
     end
 
@@ -62,11 +61,11 @@ flowchart TD
         N5[(Episodic Memory Nodes)]
     end
 
-    API --> MultiAgentEngine
+    API --> Agent
     Agent --> ToolLayer
     ToolLayer <-->|openCypher / GraphBLAS| GraphStorage
     Validator --> ToolLayer
-    Reporter --> API
+    Agent --> API
 ```
 
 ---
@@ -226,7 +225,7 @@ The ProofStack dashboard will be accessible at **http://localhost:5173**.
 | `GET` | `/api/tenants` | Lists all indexed repository graph namespaces (`repo:*`). |
 | `GET` | `/api/graph/{tenant_id}` | Retrieves full graph topology for 2D force-directed rendering. |
 | `GET` | `/api/agent/investigate/stream` | Server-Sent Events (SSE) stream for real-time ReAct loop execution. |
-| `POST` | `/api/investigation/report` | Generates deterministic, auditable Markdown incident report. |
+| `POST` | `/api/investigation/report` | Generates auditable Markdown incident report grounded in graph queries. |
 | `POST` | `/api/patch/generate` | Generates on-demand unified diff patch with AST syntax validation. |
 | `POST` | `/api/patch/apply` | Commits verified patch to Git working tree and records resolved finding. |
 | `GET` | `/api/repositories/{tenant_id}/tree` | Directory tree explorer for the indexed repository. |
@@ -238,7 +237,7 @@ The ProofStack dashboard will be accessible at **http://localhost:5173**.
 ## 9. Security and Safety Guarantees
 
 1. **Zero Unattended Repository Mutations**: ProofStack does not alter working tree files during investigation. Patch generation executes in memory against extracted AST representations.
-2. **Deterministic Syntax Verification**: Generated diffs are parsed with `ast.parse()` prior to display. Diff hunks with syntax errors or misaligned line numbers are flagged and rejected.
+2. **AST Syntax Verification**: Generated diffs are parsed with `ast.parse()` prior to display. Diff hunks with syntax errors or misaligned line numbers are flagged and rejected.
 3. **Protected Commit Operations**: Application of code changes to version control requires explicit human approval via the `/api/patch/apply` endpoint, creating an auditable Git commit record.
 4. **Tenant Namespace Isolation**: Multi-tenant repository graphs are partitioned by strict `repo:<tenant_id>` prefixes, preventing cross-repository data pollution.
 
