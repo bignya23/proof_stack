@@ -172,10 +172,10 @@ Explore 1 or 2 hops of incoming and outgoing relationships (`CALLS`, `DEFINES`, 
 Identify commits that modified functions, modules, or files along an investigated execution path between an entrypoint and a target symbol, and retrieve git diff summaries (`git show --stat`).
 MANDATORY CAUSATION CAVEAT: Temporal association alone must NOT be presented as proof of causation. The fact that a commit touched a function prior to an incident does not prove it caused the failure. Always inspect the actual source diff and corroborate with error logs.
 
-### Verified remediation sandbox
+### AST verified remediation patch
 - `mcp_validate_patch`
 
-Simulate patch application against target repository files in an isolated in-memory sandbox and verify AST syntax validity (`ast.parse()`) without touching the working tree.
+Simulate patch application against target repository files and verify AST syntax validity (`ast.parse()`) without touching the working tree.
 MANDATORY VALIDATION BOUNDARY: An AST parse establishes syntactic validity (`syntax_valid`) only. It does NOT establish functional correctness or that tests passed. The LLM must NEVER report successful tests based only on an AST parse or its own assessment of the diff.
 MANDATORY PROTECTION POLICY: Actual Git commits and repository modifications remain protected backend actions requiring human confirmation (via `/api/patch/apply`). The LLM cannot authorize its own commit (`commit_allowed: false`).
 
@@ -329,7 +329,7 @@ Requirements:
 
 **Patch Validation Execution:**
 1. Call `mcp_validate_patch` with the repository file path and proposed unified diff.
-2. `mcp_validate_patch` executes in an isolated in-memory simulation sandbox without touching the working tree. It applies the diff hunks and runs Python AST parsing (`ast.parse()`) to verify syntactic validity and alignment.
+2. `mcp_validate_patch` executes via in-memory simulation without touching the working tree. It applies the diff hunks and runs Python AST parsing (`ast.parse()`) to verify syntactic validity and alignment.
 3. Record the returned validation metrics (`syntax_valid`, `lines_added`, `lines_deleted`). If validation fails, report the specific SyntaxError, preserve the failure in the evidence registry, and do not propose an invalid patch.
 
 **Validation Status Distinctions:**

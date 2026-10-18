@@ -3,8 +3,64 @@ import React, { useState } from 'react';
 import { 
   X, Plus, Square, ArrowUp, Sparkles, Database, 
   GitPullRequest, Check, RefreshCw, ArrowUpRight,
-  FileText, Wrench, Copy
+  FileText, Wrench, Copy, Code2
 } from 'lucide-react';
+
+const TOKEN_REGEX = /(`[^`]+`|\*\*[^*]+\*\*|[a-zA-Z0-9_\-.]+\/[a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+(?:::[a-zA-Z0-9_]+)?|\bmcp_[a-zA-Z0-9_]+)/g;
+
+const renderFormattedText = (text) => {
+  if (!text) return null;
+  const parts = text.split(TOKEN_REGEX);
+  return parts.map((part, i) => {
+    if (!part) return null;
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return (
+        <code key={i} className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-blue-300 font-mono text-[10.5px]">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="font-semibold text-white">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('mcp_')) {
+      return (
+        <span key={i} className="px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-800/60 text-amber-300 font-mono text-[10.5px]">
+          {part}
+        </span>
+      );
+    }
+    if (/^[a-zA-Z0-9_\-.]+\/[a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+(?:::[a-zA-Z0-9_]+)?$/.test(part)) {
+      return (
+        <span key={i} className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-750 text-blue-300 font-mono text-[10.5px] inline-block my-0.5">
+          {part}
+        </span>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+};
+
+const parseActionSteps = (plan) => {
+  if (!plan) return [];
+  const lines = plan.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  const steps = [];
+  lines.forEach((line) => {
+    const numMatch = line.match(/^(\d+)[\.\)]\s*(.*)$/);
+    if (numMatch) {
+      steps.push({ num: numMatch[1], text: numMatch[2] });
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      steps.push({ num: '•', text: line.slice(2).trim() });
+    } else {
+      if (steps.length > 0 && steps[steps.length - 1].num !== '•') {
+        steps[steps.length - 1].text += ' ' + line;
+      } else {
+        steps.push({ num: String(steps.length + 1), text: line });
+      }
+    }
+  });
+  return steps;
+};
 
 const SAMPLE_QUERIES = [
   {
@@ -229,11 +285,24 @@ export default function RightQueryPanel({
           const hasPatchDiff = Boolean(activePatch?.diff && activePatch.diff.trim());
           const isSimple = isDirect || (!hasEvidence && !hasHops && !hasPatchDiff);
 
-          const responseText = 
-            investigationResult.synthesis.message || 
-            investigationResult.synthesis.action_plan || 
-            investigationResult.synthesis.headline || 
-            "No response generated.";
+          const headline = investigationResult.synthesis.headline || "Analysis Complete";
+          const message = investigationResult.synthesis.message;
+          const actionPlan = investigationResult.synthesis.action_plan;
+          const targetFn = investigationResult.target_function;
+          const targetFilePath = investigationResult.patch?.file_path || activePatch?.file_path || "";
+          const actionSteps = parseActionSteps(actionPlan);
+
+          const responseText = message || actionPlan || headline || "No response generated.";
+
+          const copyFullSummary = () => {
+            let md = `### ${headline}\n\n`;
+            if (targetFn) md += `**Target Symbol**: \`${targetFn}\`\n\n`;
+            if (message && message !== headline) md += `**Root Cause Diagnosis**:\n${message}\n\n`;
+            if (actionPlan) md += `**Action Plan**:\n${actionPlan}\n\n`;
+            navigator.clipboard.writeText(md);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          };
 
           if (isSimple) {
             return (
@@ -258,51 +327,100 @@ export default function RightQueryPanel({
                 </div>
 
                 <div className="text-zinc-200 text-xs leading-relaxed font-sans whitespace-pre-line select-text">
-                  {responseText}
+                  {renderFormattedText(responseText)}
                 </div>
               </div>
             );
           }
 
           return (
-            <div className="p-3.5 bg-[#18181b] border border-zinc-800 rounded-xl space-y-2.5 text-xs animate-in fade-in duration-200">
-              <div className="flex items-center justify-between text-blue-400 font-mono font-bold text-xs">
-                <span className="flex items-center space-x-1.5">
-                  <Sparkles size={16} strokeWidth={1.8} className="text-zinc-200" />
-                  <span>
-                    {hasPatchDiff
-                      ? "Investigation & Patch Complete"
-                      : "Analysis Complete"}
+            <div className="p-4 bg-[#151518] border border-zinc-800/90 rounded-2xl shadow-xl space-y-3.5 text-xs animate-in fade-in duration-200">
+              {/* 1. Header with Status Badge & Copy Button */}
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80">
+                <div className="flex items-center space-x-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                   </span>
-                </span>
-                {investigationResult.synthesis.governing_adr && 
-                 investigationResult.synthesis.governing_adr !== "Not found in indexed provenance." && 
-                 !investigationResult.synthesis.governing_adr.startsWith("N/A") && (
-                  <span className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-300 border border-zinc-800 text-[10px]">
-                    {investigationResult.synthesis.governing_adr}
+                  <span className="font-mono font-bold text-[11px] uppercase tracking-wider text-emerald-400">
+                    {hasPatchDiff ? "Remediation Staged" : "Root Cause Identified"}
                   </span>
-                )}
+                </div>
+
+                <button
+                  onClick={copyFullSummary}
+                  className="px-2 py-0.5 rounded-md bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition flex items-center space-x-1 text-[11px]"
+                  title="Copy incident diagnosis to clipboard"
+                >
+                  {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                  <span>{copied ? "Copied" : "Copy"}</span>
+                </button>
               </div>
 
-              <div className="text-zinc-100 font-medium text-xs leading-relaxed font-sans">
-                {investigationResult.synthesis.headline}
-              </div>
-
-              {investigationResult.synthesis.action_plan && (
-                <div className="p-2.5 bg-[#121214] rounded-lg border border-zinc-850 text-[11px] text-zinc-300 leading-relaxed font-sans whitespace-pre-line">
-                  {investigationResult.synthesis.action_plan}
+              {/* 2. Target Defect Symbol Card */}
+              {targetFn && (
+                <div className="p-2.5 bg-[#0e0e11] border border-zinc-800/80 rounded-xl flex items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2 min-w-0">
+                    <div className="w-6 h-6 rounded-lg bg-blue-950/80 border border-blue-800/60 flex items-center justify-center shrink-0">
+                      <Code2 size={13} className="text-blue-400" />
+                    </div>
+                    <div className="truncate">
+                      <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Target Defect Symbol</div>
+                      <div className="font-mono font-semibold text-xs text-blue-300 truncate">{targetFn}</div>
+                    </div>
+                  </div>
+                  {targetFilePath && (
+                    <span className="text-[10px] font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 shrink-0 max-w-[150px] truncate" title={targetFilePath}>
+                      {targetFilePath.split('/').pop()}
+                    </span>
+                  )}
                 </div>
               )}
 
+              {/* 3. Executive Diagnosis (Headline & Detail) */}
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-white tracking-tight leading-snug">
+                  {headline}
+                </div>
+
+                {message && message !== headline && (
+                  <div className="p-3 bg-[#0f0f12] border-l-2 border-blue-500 rounded-r-xl text-zinc-300 text-xs leading-relaxed font-sans select-text">
+                    {renderFormattedText(message)}
+                  </div>
+                )}
+              </div>
+
+              {/* 5. Metrics Footer Strip */}
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="p-2 bg-[#0e0e11] border border-zinc-850 rounded-lg text-center">
+                  <span className="text-[10px] font-mono text-zinc-500 block uppercase">Evidence</span>
+                  <span className="text-xs font-mono font-bold text-zinc-200">
+                    {investigationResult.evidence_registry?.length || 0} Items
+                  </span>
+                </div>
+                <div className="p-2 bg-[#0e0e11] border border-zinc-850 rounded-lg text-center">
+                  <span className="text-[10px] font-mono text-zinc-500 block uppercase">Blast Radius</span>
+                  <span className="text-xs font-mono font-bold text-zinc-200">
+                    {investigationResult.synthesis?.upstream_blast_count ?? 0} Callers
+                  </span>
+                </div>
+                <div className="p-2 bg-[#0e0e11] border border-zinc-850 rounded-lg text-center truncate">
+                  <span className="text-[10px] font-mono text-zinc-500 block uppercase">VCS Commit</span>
+                  <span className="text-xs font-mono font-bold text-emerald-400 truncate">
+                    HEAD
+                  </span>
+                </div>
+              </div>
+
+              {/* 6. Primary Action Buttons */}
               <div className="pt-1.5 flex flex-col gap-2">
-                {/* Primary Action Row: Evidence Report Tab & Suggest Patch / Review Patch */}
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={onOpenReportTab}
-                    className="flex-1 py-1.5 px-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1.5 shadow-sm active:scale-98"
+                    className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-sans font-semibold transition flex items-center justify-center space-x-1.5 shadow-md active:scale-98"
                     title="Open interactive Evidence Audit Report tab in middle window"
                   >
-                    <FileText size={13} strokeWidth={1.8} />
+                    <FileText size={14} strokeWidth={1.8} />
                     <span>Evidence Report</span>
                   </button>
 
@@ -310,43 +428,42 @@ export default function RightQueryPanel({
                     <button
                       onClick={onSuggestPatch}
                       disabled={isGeneratingPatch}
-                      className="flex-1 py-1.5 px-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-blue-400 hover:text-blue-300 rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1.5 shadow-sm disabled:opacity-50 active:scale-98"
+                      className="flex-1 py-2 px-3 bg-zinc-900 hover:bg-zinc-850 border border-zinc-700/80 text-blue-400 hover:text-blue-300 rounded-lg text-xs font-sans font-semibold transition flex items-center justify-center space-x-1.5 shadow-sm disabled:opacity-50 active:scale-98"
                       title="Generate AST-verified remediation patch diff"
                     >
                       {isGeneratingPatch ? (
-                        <RefreshCw size={13} className="animate-spin text-blue-400" />
+                        <RefreshCw size={14} className="animate-spin text-blue-400" />
                       ) : (
-                        <Wrench size={13} strokeWidth={1.8} />
+                        <Wrench size={14} strokeWidth={1.8} />
                       )}
-                      <span>{isGeneratingPatch ? "Simulating..." : "Suggest a Patch"}</span>
+                      <span>{isGeneratingPatch ? "Synthesizing..." : "Suggest a Patch"}</span>
                     </button>
                   ) : (
                     <button
                       onClick={onOpenCommitTab}
-                      className="flex-1 py-1.5 px-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-emerald-400 hover:text-emerald-300 rounded text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1.5 shadow-sm active:scale-98"
+                      className="flex-1 py-2 px-3 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-600/60 text-emerald-300 rounded-lg text-xs font-sans font-semibold transition flex items-center justify-center space-x-1.5 shadow-sm active:scale-98"
                       title="Review unified patch diff in editor and Source Control"
                     >
-                      <GitPullRequest size={13} strokeWidth={1.8} />
+                      <GitPullRequest size={14} strokeWidth={1.8} />
                       <span>Review Patch (Diff)</span>
                     </button>
                   )}
                 </div>
 
-                {/* Secondary Navigation Row: Evidence Count & Source Control status */}
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={onOpenEvidenceTab}
-                    className="flex-1 py-1 bg-zinc-900/60 hover:bg-zinc-850 border border-zinc-850 text-zinc-400 hover:text-zinc-200 rounded text-[10px] font-sans font-medium transition flex items-center justify-center space-x-1"
+                    className="flex-1 py-1.5 bg-zinc-900/60 hover:bg-zinc-850 border border-zinc-800 text-zinc-400 hover:text-zinc-200 rounded-lg text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1.5"
                   >
-                    <Database size={12} strokeWidth={1.8} />
+                    <Database size={13} strokeWidth={1.8} />
                     <span>Evidence Registry ({investigationResult.evidence_registry?.length || 0})</span>
                   </button>
                   {hasPatchDiff && (
                     <button
                       onClick={onOpenCommitTab}
-                      className="flex-1 py-1 bg-zinc-900/60 hover:bg-zinc-850 border border-zinc-850 text-amber-400 hover:text-amber-300 rounded text-[10px] font-sans font-medium transition flex items-center justify-center space-x-1 font-mono"
+                      className="flex-1 py-1.5 bg-zinc-900/60 hover:bg-zinc-850 border border-zinc-800 text-amber-400 hover:text-amber-300 rounded-lg text-[11px] font-sans font-medium transition flex items-center justify-center space-x-1.5 font-mono"
                     >
-                      <span className="font-bold text-[10px]">M</span>
+                      <span className="font-bold text-[11px]">M</span>
                       <span>Source Control (1)</span>
                     </button>
                   )}

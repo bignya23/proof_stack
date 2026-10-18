@@ -50,11 +50,11 @@ const STATUS_CONFIG = {
     description: "Verified via Git commit / ADR lineage"
   },
   syntax_valid: {
-    label: "Sandbox Valid",
+    label: "Syntax Valid",
     color: "bg-zinc-900 text-emerald-300 border-zinc-800",
     dot: "bg-emerald-400",
     icon: CircleCheck,
-    description: "AST parse verified in sandbox simulation"
+    description: "AST parse verified syntax check"
   },
   confirmed: {
     label: "Confirmed",

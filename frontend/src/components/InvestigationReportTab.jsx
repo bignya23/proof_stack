@@ -5,6 +5,195 @@ import {
   ShieldCheck, FileText, Layers, AlertCircle, BookOpen, GitCommit, User, Activity
 } from 'lucide-react';
 
+const TOKEN_REGEX = /(`[^`]+`|\*\*[^*]+\*\*|[a-zA-Z0-9_\-.]+\/[a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+(?:::[a-zA-Z0-9_]+)?|\bmcp_[a-zA-Z0-9_]+)/g;
+
+const renderFormattedText = (text, onOpenFile, onSelectNode) => {
+  if (!text) return null;
+  const parts = text.split(TOKEN_REGEX);
+  return parts.map((part, i) => {
+    if (!part) return null;
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return (
+        <code key={i} className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-blue-300 font-mono text-[10.5px]">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="font-semibold text-white">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('mcp_')) {
+      return (
+        <span key={i} className="px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-800/60 text-amber-300 font-mono text-[10.5px]">
+          {part}
+        </span>
+      );
+    }
+    // File path or symbol pattern
+    if (/^[a-zA-Z0-9_\-.]+\/[a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+(?:::[a-zA-Z0-9_]+)?$/.test(part)) {
+      const [filePath, symbol] = part.split('::');
+      return (
+        <span
+          key={i}
+          onClick={() => {
+            if (symbol && onSelectNode) {
+              onSelectNode(symbol);
+            } else if (filePath && onOpenFile) {
+              onOpenFile(filePath);
+            }
+          }}
+          className={`px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-700/80 text-blue-300 font-mono text-[10.5px] inline-block my-0.5 ${
+            (onOpenFile || onSelectNode) ? 'cursor-pointer hover:border-blue-500 hover:text-blue-200 transition' : ''
+          }`}
+          title={symbol ? `Navigate to symbol ${symbol} in graph` : `Open file ${filePath}`}
+        >
+          {part}
+        </span>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+};
+
+const parseTextToPoints = (text) => {
+  if (!text || typeof text !== 'string') return [];
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+
+  // Normalize inline bullets like " - code_observed:", " - graph_observed:", " - ", " * "
+  let normalized = trimmed
+    .replace(/\s*-\s*([a-zA-Z0-9_]+_observed):\s*/gi, '\n- [$1] ')
+    .replace(/\s+-\s+/g, '\n- ')
+    .replace(/\s+\*\s+/g, '\n* ');
+
+  const lines = normalized.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  const points = [];
+
+  lines.forEach((line) => {
+    // Drop dangling trailing empty tags like "- graph_observed:" or "- [graph_observed]"
+    if (/^[-*•]\s*(\[?[a-zA-Z0-9_]+_observed\]?:?)\s*$/i.test(line)) {
+      return;
+    }
+
+    // Numbered point at start of line
+    const numMatch = line.match(/^(\d+)[\.\)]\s+(.*)$/);
+    if (numMatch) {
+      points.push({ type: 'number', num: numMatch[1], content: numMatch[2] });
+      return;
+    }
+
+    // Bullet point
+    const bulletMatch = line.match(/^[-*•]\s+(.*)$/);
+    if (bulletMatch) {
+      const content = bulletMatch[1];
+      const tagMatch = content.match(/^\[([a-zA-Z0-9_]+)\]\s*(.*)$/);
+      if (tagMatch) {
+        points.push({
+          type: 'bullet',
+          tag: tagMatch[1],
+          content: tagMatch[2]
+        });
+      } else {
+        if (content.endsWith(':') && content.length < 90) {
+          points.push({ type: 'header', content });
+        } else {
+          points.push({ type: 'bullet', content });
+        }
+      }
+      return;
+    }
+
+    if (line.endsWith(':') && line.length < 90) {
+      points.push({ type: 'header', content: line });
+    } else {
+      points.push({ type: 'paragraph', content: line });
+    }
+  });
+
+  return points;
+};
+
+const renderReadableContent = (text, defaultClassName = "text-zinc-200", onOpenFile, onSelectNode) => {
+  if (!text) return null;
+  const points = parseTextToPoints(text);
+
+  if (points.length <= 1 && points[0]?.type === 'paragraph') {
+    return (
+      <div className={`${defaultClassName} leading-relaxed select-text font-sans`}>
+        {renderFormattedText(text, onOpenFile, onSelectNode)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 my-1">
+      {points.map((pt, idx) => {
+        if (pt.type === 'header') {
+          return (
+            <div key={idx} className="text-xs font-mono font-semibold text-zinc-300 uppercase tracking-wider pt-1 pb-0.5 border-b border-zinc-800/60 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+              <span>{renderFormattedText(pt.content, onOpenFile, onSelectNode)}</span>
+            </div>
+          );
+        }
+
+        if (pt.type === 'number') {
+          return (
+            <div key={idx} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-[#0c0d10]/60 border border-zinc-800/80 hover:border-zinc-700 transition">
+              <span className="w-5 h-5 rounded-md bg-blue-950/80 border border-blue-800/70 text-blue-400 font-mono text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                {pt.num}
+              </span>
+              <div className="text-xs text-zinc-200 font-sans leading-relaxed select-text flex-1">
+                {renderFormattedText(pt.content, onOpenFile, onSelectNode)}
+              </div>
+            </div>
+          );
+        }
+
+        if (pt.type === 'bullet') {
+          return (
+            <div key={idx} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-[#0c0d10]/60 border border-zinc-800/80 hover:border-zinc-700 transition">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0 mt-2"></span>
+              <div className="text-xs text-zinc-200 font-sans leading-relaxed select-text flex-1">
+                {pt.tag && (
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide mr-2 inline-flex items-center ${
+                    pt.tag.toLowerCase().includes('code')
+                      ? 'bg-blue-950/80 text-blue-300 border border-blue-700/60'
+                      : pt.tag.toLowerCase().includes('graph')
+                      ? 'bg-purple-950/80 text-purple-300 border border-purple-700/60'
+                      : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                  }`}>
+                    {pt.tag}
+                  </span>
+                )}
+                {renderFormattedText(pt.content, onOpenFile, onSelectNode)}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div key={idx} className="text-xs text-zinc-300 font-sans leading-relaxed select-text p-1">
+            {renderFormattedText(pt.content, onOpenFile, onSelectNode)}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const parseActionSteps = (plan) => {
+  if (!plan) return [];
+  const points = parseTextToPoints(plan);
+  if (!points.length) return [];
+  const actionable = points.filter(p => p.type !== 'header');
+  return actionable.map((p, idx) => ({
+    num: p.num || String(idx + 1),
+    tag: p.tag,
+    text: p.content || ''
+  }));
+};
+
 export default function InvestigationReportTab({
   investigationResult,
   activeTenant,
@@ -69,60 +258,53 @@ export default function InvestigationReportTab({
 
   // Metadata mappings
   const repoId = formalReport?.repository?.repository_id || `repo:${activeTenant || 'sample-fintech'}`;
-  const targetSymbol = investigationResult.target_function || 'decrypt_card_token';
-  const commitSha = formalReport?.repository?.analyzed_commit_sha?.slice(0, 7) || '40e6e4f';
+  const targetSymbol = investigationResult.target_function || formalReport?.target_function || 'Target Component';
+  const commitSha = formalReport?.repository?.analyzed_commit_sha?.slice(0, 7) || 'HEAD';
+
+  const cleanText = (val, fallback = '') => {
+    if (!val || typeof val !== 'string') return fallback;
+    const trimmed = val.trim();
+    if (trimmed.startsWith('{') && (trimmed.includes('"tool"') || trimmed.includes('"query"') || trimmed.includes('"matches"'))) {
+      return fallback;
+    }
+    return trimmed;
+  };
 
   const reportTitle = formalReport?.report_title || (synthesis?.headline 
     ? `Incident: ${synthesis.headline}` 
-    : 'Incident: 504 Gateway Timeout in Token Decryption Pipeline');
+    : 'Incident: Grounded Graph Investigation');
 
-  const rootCauseText = formalReport?.executive_summary?.primary_finding 
-    || synthesis?.headline 
-    || 'Hardcoded 250ms gRPC client deadline in decrypt_card_token exceeds downstream latency under flash-sale load.';
+  const incidentSymptom = cleanText(
+    formalReport?.executive_summary?.problem,
+    cleanText(investigationResult?.prompt, cleanText(synthesis?.headline, 'Software incident under investigation'))
+  );
 
-  const resolutionText = formalReport?.executive_summary?.recommended_next_step 
+  const rootCauseText = cleanText(
+    formalReport?.executive_summary?.primary_finding,
+    cleanText(synthesis?.message, cleanText(synthesis?.headline, 'Root cause diagnosis based on FalkorDB multi-hop traversal and local code inspection.'))
+  );
+
+  const resolutionText = cleanText(
+    formalReport?.executive_summary?.recommended_next_step,
+    cleanText(synthesis?.action_plan, 'Review identified graph dependencies and recommended code modifications.')
+  );
+
+  const rawActionPlan = formalReport?.executive_summary?.recommended_next_step 
+    || formalReport?.remediation?.recommended_actions?.join('\n') 
     || synthesis?.action_plan 
-    || 'Increase gRPC client deadline from 250ms to 800ms with jittered exponential backoff.';
+    || '';
+  const actionSteps = parseActionSteps(rawActionPlan);
 
-  const blastRadiusCount = formalReport?.impact_analysis?.upstream_blast_count ?? synthesis?.upstream_blast_count ?? 5;
-  const affectedCallers = formalReport?.impact_analysis?.affected_components || [
-    { function: 'handle_checkout', file: 'checkout_service.py', hop_depth: 3, role: 'API Gateway Ingress' },
-    { function: 'authorize_payment', file: 'payment_service.py', hop_depth: 2, role: 'Payment Orchestrator' },
-    { function: 'tokenize_card', file: 'token_service.py', hop_depth: 1, role: 'Tokenization Client' },
-  ];
+  const blastRadiusCount = formalReport?.impact_analysis?.upstream_blast_count ?? synthesis?.upstream_blast_count ?? 0;
+  const affectedCallers = formalReport?.impact_analysis?.affected_components || [];
 
-  const primaryOwner = formalReport?.provenance?.engineers?.[0]?.name || synthesis?.primary_owner || 'Aarav Mehta';
-  const governingAdr = formalReport?.provenance?.adrs?.[0]?.decision_id || synthesis?.governing_adr || 'ADR-042';
+  const primaryOwner = formalReport?.provenance?.engineers?.[0]?.name || synthesis?.primary_owner || 'Unassigned';
+  const governingAdr = formalReport?.provenance?.adrs?.[0]?.decision_id || synthesis?.governing_adr || 'None recorded';
 
-  const hopsCount = execution_path?.hops ?? (nodes.length > 0 ? nodes.length - 1 : 3);
+  const hopsCount = execution_path?.hops ?? (nodes.length > 0 ? nodes.length - 1 : 0);
 
   // Normalize evidence items into a clean structured table
-  const evidenceItems = evidence_registry.length > 0 ? evidence_registry : [
-    {
-      evidence_id: 'E01',
-      tool: 'mcp_ast_inspect',
-      claim: 'Hardcoded deadline=0.25 detected in vault_client.py:42 via AST inspection',
-      status: 'verified'
-    },
-    {
-      evidence_id: 'E02',
-      tool: 'mcp_shortest_execution_path',
-      claim: 'openCypher shortest path confirmed from handle_checkout to decrypt_card_token (3 hops)',
-      status: 'verified'
-    },
-    {
-      evidence_id: 'E03',
-      tool: 'mcp_ast_blast_radius',
-      claim: '5 upstream callers reach the target function via [:CALLS*1..5]',
-      status: 'verified'
-    },
-    {
-      evidence_id: 'E04',
-      tool: 'mcp_company_brain_provenance',
-      claim: `Authored by ${primaryOwner}, governed by ${governingAdr} (Strict Service Timeouts)`,
-      status: 'verified'
-    }
-  ];
+  const evidenceItems = evidence_registry || [];
 
   const formatMethodName = (tool) => {
     if (!tool) return 'Static Inspection';
@@ -130,7 +312,7 @@ export default function InvestigationReportTab({
     if (tool.includes('shortest') || tool.includes('cypher')) return 'openCypher Path Traversal';
     if (tool.includes('blast_radius')) return 'AST Call Graph Reachability';
     if (tool.includes('provenance')) return 'Git Blame & ADR Audit';
-    if (tool.includes('validate_patch')) return 'Isolated AST Sandbox';
+    if (tool.includes('validate_patch')) return 'AST Syntax Verification';
     return tool.replace('mcp_', '').replace(/_/g, ' ');
   };
 
@@ -146,7 +328,7 @@ export default function InvestigationReportTab({
     md += `| **Status** | ROOT CAUSE IDENTIFIED |\n\n`;
 
     md += `## 1. Executive Summary\n`;
-    md += `- **Incident Symptom**: Checkout gateway 504 timeouts under peak load.\n`;
+    md += `- **Incident Symptom**: ${incidentSymptom}\n`;
     md += `- **Root Cause**: ${rootCauseText}\n`;
     md += `- **Remediation Strategy**: ${resolutionText}\n\n`;
 
@@ -179,8 +361,16 @@ export default function InvestigationReportTab({
     md += `- **Governing Policy**: ${governingAdr}\n`;
     md += `- **Origin Commit**: ${commitSha}\n\n`;
 
+    if (actionSteps.length > 0) {
+      md += `## 6. Actionable Remediation Protocol\n`;
+      actionSteps.forEach(st => {
+        md += `${st.num}. ${st.text}\n`;
+      });
+      md += `\n`;
+    }
+
     if (hasPatch) {
-      md += `## 6. Validated Remediation Patch\n`;
+      md += `## 7. Validated Remediation Patch\n`;
       md += `Target File: \`${patch.file_path}\`\n\n`;
       md += `\`\`\`diff\n${patch.diff}\n\`\`\`\n`;
     }
@@ -284,21 +474,21 @@ export default function InvestigationReportTab({
             <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-4 gap-2">
               <span className="text-xs font-mono font-semibold text-zinc-400 uppercase tracking-wide">Incident Symptom</span>
               <div className="sm:col-span-3 text-zinc-100 font-medium">
-                Checkout gateway experiencing 504 Gateway Timeouts under flash-sale traffic load.
+                {renderReadableContent(incidentSymptom, "text-zinc-100 font-medium", onOpenFile, onSelectNode)}
               </div>
             </div>
 
             <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-4 gap-2 bg-zinc-900/20">
               <span className="text-xs font-mono font-semibold text-zinc-400 uppercase tracking-wide">Root Cause Diagnosis</span>
               <div className="sm:col-span-3 text-white leading-relaxed font-normal">
-                {rootCauseText}
+                {renderReadableContent(rootCauseText, "text-white leading-relaxed font-normal", onOpenFile, onSelectNode)}
               </div>
             </div>
 
             <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-4 gap-2">
               <span className="text-xs font-mono font-semibold text-zinc-400 uppercase tracking-wide">Remediation Strategy</span>
               <div className="sm:col-span-3 text-zinc-200 leading-relaxed">
-                {resolutionText}
+                {renderReadableContent(resolutionText, "text-zinc-200 leading-relaxed", onOpenFile, onSelectNode)}
               </div>
             </div>
 
@@ -338,7 +528,9 @@ export default function InvestigationReportTab({
                   <tr key={idx} className="hover:bg-zinc-900/40 transition">
                     <td className="py-3 px-4 font-bold text-blue-400">{ev.evidence_id || `E0${idx + 1}`}</td>
                     <td className="py-3 px-4 text-zinc-300 font-medium">{formatMethodName(ev.tool)}</td>
-                    <td className="py-3 px-4 text-zinc-200 font-sans text-xs leading-relaxed">{ev.claim}</td>
+                    <td className="py-3 px-4 text-zinc-200 font-sans text-xs leading-relaxed">
+                      {renderReadableContent(ev.claim, "text-zinc-200 font-sans text-xs leading-relaxed", onOpenFile, onSelectNode)}
+                    </td>
                     <td className="py-3 px-4 text-right">
                       <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-950/70 border border-emerald-700/60 text-emerald-400">
                         VERIFIED
@@ -493,7 +685,9 @@ export default function InvestigationReportTab({
                 <User size={15} className="text-blue-400" />
                 <span>{primaryOwner}</span>
               </div>
-              <span className="text-[11px] text-zinc-400 block">Senior Platform Engineer</span>
+              <span className="text-[11px] text-zinc-400 block">
+                {formalReport?.provenance?.engineers?.[0]?.attribution || (primaryOwner !== 'Unassigned' ? 'Repository Contributor' : 'Unassigned in VCS')}
+              </span>
             </div>
 
             <div className="p-4 bg-[#0c0d10] border border-zinc-800 rounded-lg space-y-1.5">
@@ -502,7 +696,9 @@ export default function InvestigationReportTab({
                 <BookOpen size={15} className="text-amber-400" />
                 <span>{governingAdr}</span>
               </div>
-              <span className="text-[11px] text-zinc-400 block">Strict service deadline enforcement</span>
+              <span className="text-[11px] text-zinc-400 block">
+                {formalReport?.provenance?.adrs?.[0]?.title || (governingAdr !== 'None recorded' ? 'Architectural Policy' : 'No recorded ADR policy')}
+              </span>
             </div>
 
             <div className="p-4 bg-[#0c0d10] border border-zinc-800 rounded-lg space-y-1.5">
@@ -511,16 +707,18 @@ export default function InvestigationReportTab({
                 <GitCommit size={15} className="text-emerald-400" />
                 <span>{commitSha}</span>
               </div>
-              <span className="text-[11px] text-zinc-400 block">Enforce gRPC timeout</span>
+              <span className="text-[11px] text-zinc-400 block">
+                {formalReport?.provenance?.commits?.[0]?.message || (commitSha !== 'HEAD' ? `Snapshot ${commitSha}` : 'Working tree HEAD')}
+              </span>
             </div>
           </div>
         </section>
 
-        {/* ================= 7. REMEDIATION & AST VALIDATED PATCH ================= */}
+        {/* ================= 6. REMEDIATION PROTOCOL & ACTIONABLE PATCH ================= */}
         <section className="bg-[#111216] border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
           <div className="px-5 py-3 bg-zinc-900/60 border-b border-zinc-800 flex items-center justify-between">
             <h2 className="text-xs font-mono font-bold tracking-wider uppercase text-blue-400 flex items-center gap-2">
-              <span>6. Remediation & Actionable Patch</span>
+              <span>6. Remediation Protocol & Actionable Patch</span>
             </h2>
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono text-zinc-400">Patch Status:</span>
@@ -534,10 +732,51 @@ export default function InvestigationReportTab({
             </div>
           </div>
 
-          <div className="p-5 space-y-4">
-            {hasPatch ? (
+          <div className="p-5 space-y-5">
+            {/* Actionable Remediation Protocol Steps */}
+            {actionSteps.length > 0 && (
               <div className="space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center justify-between pb-1.5 border-b border-zinc-800/70">
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                    <Wrench size={13} className="text-amber-400" />
+                    <span>Actionable Remediation Protocol</span>
+                  </span>
+                  <span className="text-[11px] font-mono text-zinc-400">{actionSteps.length} Steps</span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2">
+                  {actionSteps.map((step, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 bg-[#0c0d10] border border-zinc-800 rounded-lg flex items-start space-x-3 hover:border-zinc-700 transition"
+                    >
+                      <span className="w-5 h-5 rounded-md bg-zinc-900 border border-zinc-700/80 text-amber-400 font-mono text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                        {step.num}
+                      </span>
+                      <div className="text-xs text-zinc-200 font-sans leading-relaxed select-text flex-1">
+                        {step.tag && (
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide mr-2 inline-flex items-center ${
+                            step.tag.toLowerCase().includes('code')
+                              ? 'bg-blue-950/80 text-blue-300 border border-blue-700/60'
+                              : step.tag.toLowerCase().includes('graph')
+                              ? 'bg-purple-950/80 text-purple-300 border border-purple-700/60'
+                              : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                          }`}>
+                            {step.tag}
+                          </span>
+                        )}
+                        {renderFormattedText(step.text, onOpenFile, onSelectNode)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Patch Staging / Diff Display */}
+            {hasPatch ? (
+              <div className="space-y-3 pt-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-zinc-800/70">
                   <div className="text-xs font-mono text-zinc-300">
                     Target File: <strong className="text-white">{patch.file_path}</strong>
                   </div>

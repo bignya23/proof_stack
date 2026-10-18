@@ -212,13 +212,7 @@ def apply_diff_patch(current_content: str, patch_diff: Optional[str]) -> str:
     and partial code replacements reliably.
     """
     if not patch_diff or not patch_diff.strip():
-        return current_content.replace(
-            "strict 50ms gRPC timeout (ADR-042)",
-            "resilient 120ms gRPC timeout (remediated INC-8410)",
-        ).replace(
-            "# Enforced timeout_ms = 50 per ADR-042",
-            "# Remediated timeout_ms = 120 per Incident Finding mem-001 & Agent Patch",
-        )
+        return current_content
 
     # If the patch is already complete python code rather than a diff
     if "@@" not in patch_diff and ("def " in patch_diff or "import " in patch_diff):
@@ -312,34 +306,6 @@ def apply_diff_patch(current_content: str, patch_diff: Optional[str]) -> str:
                 result = result.replace(rem_block.strip(), add_block.strip(), 1)
                 continue
 
-    # 4. Fallback sanity check: if the diff introduced env override function
-    # ensure it is injected accurately into vault_client.py
-    if "def _env_override_timeout_ms" in patch_diff and "def _env_override_timeout_ms" not in result:
-        if "import os" not in result:
-            if "import random" in result:
-                result = result.replace("import random", "import os\nimport random", 1)
-            else:
-                result = "import os\n" + result
-
-        override_func = (
-            "DEFAULT_GRPC_TIMEOUT_MS = 120\n\n"
-            "def _env_override_timeout_ms() -> int:\n"
-            '    val = os.getenv("DECRYPT_GRPC_TIMEOUT_MS")\n'
-            "    if not val:\n"
-            "        return DEFAULT_GRPC_TIMEOUT_MS\n"
-            "    try:\n"
-            "        parsed = int(val)\n"
-            "    except ValueError:\n"
-            "        return DEFAULT_GRPC_TIMEOUT_MS\n"
-            "    return min(5000, max(50, parsed))\n\n"
-            "GRPC_TIMEOUT_MS = _env_override_timeout_ms()"
-        )
-
-        if "GRPC_TIMEOUT_MS = 120" in result:
-            result = result.replace("GRPC_TIMEOUT_MS = 120", override_func, 1)
-        elif "GRPC_TIMEOUT_MS = 50" in result:
-            result = result.replace("GRPC_TIMEOUT_MS = 50", override_func, 1)
-
     return result
 
 
@@ -363,6 +329,7 @@ def check_and_validate_diff_patch(patch: Optional[dict], tenant_id: str = "sampl
     diff_str = patch.get("diff")
     if not diff_str or not str(diff_str).strip():
         patch["diff"] = ""
+        patch["status"] = "not_requested"
         patch["validation_status"] = "none"
         patch["validation"] = {
             "syntax_valid": True,
@@ -370,13 +337,15 @@ def check_and_validate_diff_patch(patch: Optional[dict], tenant_id: str = "sampl
             "lines_added": 0,
             "lines_deleted": 0,
             "status": "NO_PATCH_REQUIRED",
-            "message": "No code modification required for this query.",
+            "message": "Patch generation awaiting developer trigger.",
             "target_file": patch.get("file_path", ""),
             "target_exists": False,
         }
         return patch
 
-    file_path = patch.get("file_path", "vault_client.py")
+    file_path = patch.get("file_path") or ""
+    if not file_path:
+        return patch
 
     lines_added   = sum(1 for l in diff_str.splitlines() if l.startswith("+") and not l.startswith("+++"))
     lines_deleted = sum(1 for l in diff_str.splitlines() if l.startswith("-") and not l.startswith("---"))
@@ -400,6 +369,8 @@ def check_and_validate_diff_patch(patch: Optional[dict], tenant_id: str = "sampl
         ast_message = f"SyntaxError on line {syn_err.lineno}: {syn_err.msg}"
 
     patch["validation_status"] = "syntax_valid" if syntax_valid else "failed_validation"
+    patch["status"] = "validated" if syntax_valid else "generated"
+    patch["valid"] = syntax_valid
     patch["validation"] = {
         "syntax_valid":  syntax_valid,
         "ast_verified":  syntax_valid,
@@ -468,82 +439,47 @@ def _build_deterministic_evidence(step_results: list) -> list:
 
 def enhance_investigation_query(prompt: str, tenant_id: str = "sample-fintech") -> dict:
     """
-    [Step 1: Query Enhancement & Code Symbol Grounding]
-    Transforms the user's natural language request into a code-aware investigation plan:
-    1. Expands domain terminology and technical synonyms (e.g., 'Gmail send' -> email, smtp, mail, send_alert_email).
-    2. Executes scored fuzzy matching against FalkorDB Function nodes to find candidate targets and entrypoints.
-    3. Produces an enriched prompt with grounded symbol references for the ReAct loop.
+    [Step 1: Dynamic Symbol Discovery & Grounding via MCP Tools]
+    Extracts candidate code symbols from the natural language prompt and resolves
+    them dynamically against the active FalkorDB knowledge graph via mcp_find_symbol.
+    Never relies on hardcoded function names or domain dictionaries.
     """
-    p_lower = prompt.lower()
-
-    domain_synonyms = {
-        "gmail": ["gmail", "mail", "email", "smtp"],
-        "email": ["email", "mail", "smtp", "sendmail"],
-        "send": ["send", "alert", "dispatch", "deliver", "notify", "post"],
-        "checkout": ["checkout", "order", "cart", "purchase", "payment"],
-        "payment": ["payment", "charge", "card", "transaction", "token", "authorize"],
-        "vault": ["vault", "hsm", "decrypt", "key", "secret"],
-        "token": ["token", "decrypt", "card_token", "pci"],
-        "timeout": ["timeout", "deadline", "delay", "retry", "backoff", "grpc"],
-        "failures": ["error", "exception", "fail", "failure", "crash", "500", "504"],
-        "auth": ["auth", "login", "signup", "user", "authenticate", "session", "jwt"],
+    tokens = re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]{2,}\b", prompt)
+    stop_words = {
+        "the", "and", "for", "with", "are", "causes", "causing", "http", "error", "errors",
+        "why", "what", "how", "from", "into", "over", "under", "fail", "fails", "failing",
+        "code", "file", "function", "repo", "repository", "codebase", "show", "tell",
+        "find", "check", "test", "investigate", "audit", "trace", "patch", "fix", "please",
+        "does", "this", "that", "which", "when", "where", "user", "load", "explain"
     }
-
-    words = [w for w in re.findall(r"\b[a-zA-Z0-9_]{3,}\b", p_lower) if w not in {
-        "the", "and", "for", "with", "are", "causes", "causing", "http", "error", "errors", "why", "what", "how", "from", "into", "over", "under", "fail", "fails"
-    }]
-
-    expanded_terms = set(words)
-    for w in words:
-        for k, syns in domain_synonyms.items():
-            if k in w or w in k:
-                expanded_terms.update(syns)
+    candidate_tokens = [t for t in tokens if t.lower() not in stop_words]
 
     candidate_targets = []
     candidate_entrypoints = []
 
-    try:
-        g = get_repo_graph(tenant_id)
-        res = g.query("MATCH (fn:Function) RETURN fn.name, fn.file, fn.qname")
-        scored_fns = []
-        for r in res.result_set:
-            fn_name = (r[0] or "").lower()
-            fn_file = (r[1] or "").lower()
-            qname = (r[2] or "").lower()
-            score = 0
-            matched_terms = []
-            for term in expanded_terms:
-                if term in fn_name:
-                    score += 3
-                    matched_terms.append(term)
-                elif term in fn_file:
-                    score += 1
-                    matched_terms.append(term)
+    for tok in candidate_tokens:
+        try:
+            sym_res = mcp_find_symbol(tok, tenant_id)
+            if sym_res.get("matches_found", 0) > 0:
+                for match in sym_res.get("matches", []):
+                    item = {
+                        "name": match.get("name"),
+                        "file": match.get("file_path"),
+                        "qname": match.get("qname"),
+                        "confidence": match.get("confidence", 0.5),
+                        "entity_type": match.get("entity_type", "Function"),
+                    }
+                    if any(v in (item["file"] or "").lower() or v in (item["name"] or "").lower() for v in ["endpoint", "router", "view", "api", "controller", "handler"]):
+                        if item not in candidate_entrypoints:
+                            candidate_entrypoints.append(item)
+                    else:
+                        if item not in candidate_targets:
+                            candidate_targets.append(item)
+        except Exception as e:
+            print(f"[!] Dynamic symbol lookup note: {e}")
 
-            if score > 0:
-                scored_fns.append({
-                    "score": score,
-                    "name": r[0],
-                    "file": r[1],
-                    "qname": r[2],
-                    "matched": matched_terms,
-                    "is_view_or_endpoint": any(v in fn_file or v in fn_name for v in ["view", "endpoint", "router", "api", "controller", "handler"])
-                })
-
-        scored_fns.sort(key=lambda x: x["score"], reverse=True)
-
-        for item in scored_fns:
-            if item["is_view_or_endpoint"] and not candidate_entrypoints:
-                candidate_entrypoints.append(item)
-            elif not candidate_targets:
-                candidate_targets.append(item)
-            if len(candidate_targets) >= 3 and candidate_entrypoints:
-                break
-    except Exception as e:
-        print(f"[!] Error in enhance_investigation_query: {e}")
-
-    best_target = candidate_targets[0]["name"] if candidate_targets else None
-    best_file = candidate_targets[0]["file"] if candidate_targets else None
+    best_target = candidate_targets[0]["name"] if candidate_targets else (candidate_entrypoints[0]["name"] if candidate_entrypoints else None)
+    best_file = candidate_targets[0]["file"] if candidate_targets else (candidate_entrypoints[0]["file"] if candidate_entrypoints else None)
     best_entrypoint = candidate_entrypoints[0]["name"] if candidate_entrypoints else None
 
     enhanced_summary = (
@@ -554,7 +490,7 @@ def enhance_investigation_query(prompt: str, tenant_id: str = "sample-fintech") 
 
     return {
         "original_prompt": prompt,
-        "expanded_terms": list(expanded_terms),
+        "expanded_terms": candidate_tokens,
         "candidate_targets": candidate_targets,
         "candidate_entrypoints": candidate_entrypoints,
         "best_target": best_target,
@@ -567,25 +503,30 @@ def enhance_investigation_query(prompt: str, tenant_id: str = "sample-fintech") 
 def analyze_query_intent(prompt: str, tenant_id: str = "sample-fintech") -> dict:
     """
     Classifies user prompt into Track 1 request categories:
-      1. 'general_question': Conceptual inquiries, definitions, algorithms (PageRank, AST, GraphBLAS, etc.)
-         that do not require repository graph traversal -> 0 MCP calls, zero latency.
+      1. 'general_question': Conceptual inquiries, definitions, algorithms that do not require
+         repository graph traversal -> 0 MCP calls, zero latency.
       2. 'repository_investigation': Exploring repository behavior, incidents, triage, call graphs,
-         blast radius, change attribution, or provenance -> Guided by FalkorDB graph relationships.
-      3. 'codebase_action': Requests to modify code, remediate bugs, apply patches, or run syntax checks ->
-         Grounded in graph, validated in isolated sandbox via mcp_validate_patch, commits strictly protected.
-    
-    Dynamically anchors symbols and entities from the active FalkorDB graph without hardcoding.
+         blast radius, change attribution, or provenance.
+      3. 'codebase_action': Requests to modify code, remediate bugs, apply patches, or run syntax checks.
+
+    Dynamically anchors symbols via FastMCP tools without hardcoding.
     """
     p_lower = prompt.lower().strip()
 
-    # 1. Check for GENERAL_QUESTION (conceptual, algorithmic, educational, simple greeting/query)
-    is_general_query = bool(re.search(r"^(what\s+is|what\s+are|how\s+does|how\s+do|how\s+can|explain|define|tell\s+me|describe|why\s+is|why\s+does|can\s+you|who\s+is|hi|hello|hey|help)\b", p_lower))
-    is_repo_specific = any(repo_word in p_lower for repo_word in [
-        "error", "504", "incident", "failing", "deploy", "checkout", "fix", "patch", 
-        "in repo", "in this codebase", "in our code", "break", "calls", "upstream", "blast",
-        "decrypt_card_token", "vault_client", "post_checkout", "settle_payment", "adr-042"
-    ])
-    if (is_general_query and not is_repo_specific) or p_lower in ["hi", "hello", "hey", "help", "who are you"]:
+    # Dynamic symbol discovery via enhance_investigation_query
+    enh = enhance_investigation_query(prompt, tenant_id)
+    target_fn = enh.get("best_target")
+    target_file = enh.get("best_file")
+    entrypoint_fn = enh.get("best_entrypoint")
+
+    # General conceptual question check
+    is_general_query = bool(re.search(
+        r"^(what\s+is|what\s+are|how\s+does|how\s+do|how\s+can|explain|define|tell\s+me|describe|why\s+is|why\s+does|can\s+you|who\s+is|hi|hello|hey|help)\b",
+        p_lower
+    ))
+    has_code_keywords = any(w in p_lower for w in ["repo", "codebase", "function", "commit", "bug", "trace", "incident", "patch", "caller", "callee", "file", "in code", "in repo"])
+
+    if (is_general_query and not target_fn and not target_file and not has_code_keywords) or p_lower in ["hi", "hello", "hey", "help", "who are you"]:
         return {
             "category": "general_question",
             "intent": "general_question",
@@ -596,114 +537,40 @@ def analyze_query_intent(prompt: str, tenant_id: str = "sample-fintech") -> dict
             "requires_mcp": False,
         }
 
-    # 2. Dynamic symbol search in FalkorDB (no hardcoding!)
-    target_fn = None
-    target_file = None
-    entrypoint_fn = None
-
-    try:
-        g = get_repo_graph(tenant_id)
-        # Search for exact or substring function name matches in prompt
-        fn_res = g.query("MATCH (fn:Function) RETURN fn.name, fn.file, fn.qname")
-        all_graph_fns = [(r[0], r[1], r[2]) for r in fn_res.result_set if r[0]]
-        
-        # Look for explicit function name mention in prompt
-        for fn_name, fn_file, fn_qname in all_graph_fns:
-            pattern = r"\b" + re.escape(fn_name.lower()) + r"\b"
-            if re.search(pattern, p_lower):
-                target_fn = fn_name
-                target_file = fn_file
-                break
-
-        # If not found yet, check files
-        if not target_file:
-            file_res = g.query("MATCH (f:File) RETURN f.path")
-            for r in file_res.result_set:
-                fpath = r[0] or ""
-                fname = Path(fpath).name.lower()
-                if fname in p_lower:
-                    target_file = fpath
-                    break
-
-        # Check for incident findings attached to functions related to terms in prompt (e.g. 504, timeout, flash-sale)
-        if not target_fn and any(w in p_lower for w in ["504", "timeout", "incident", "failing", "flash-sale", "outage"]):
-            finding_res = g.query("""
-                MATCH (f:Finding)-[:ATTACHED_TO]->(fn:Function)
-                RETURN fn.name, fn.file, f.summary
-            """)
-            for r in finding_res.result_set:
-                fn_name, fn_file, summary = r
-                s_lower = (summary or "").lower()
-                if any(w in s_lower for w in ["504", "timeout", "flash-sale"]) and any(w in p_lower for w in ["504", "timeout", "flash-sale", "outage"]):
-                    target_fn = fn_name
-                    target_file = fn_file
-                    break
-
-        # Check for entrypoint functions (endpoints, routers, handlers) matching prompt terms
-        if any(w in p_lower for w in ["checkout", "cart", "order"]):
-            for fn_name, fn_file, _ in all_graph_fns:
-                fn_l = fn_name.lower()
-                if "checkout" in fn_l and ("endpoint" in fn_l or "router" in fn_l or "post" in fn_l or "process" in fn_l):
-                    if target_fn and fn_name != target_fn:
-                        entrypoint_fn = fn_name
-                        break
-                    elif not target_fn:
-                        entrypoint_fn = fn_name
-
-    except Exception as e:
-        print(f"[!] Dynamic symbol lookup in FalkorDB error: {e}")
-
-    # Use enhance_investigation_query for fuzzy scored matching if still not found
-    enh = enhance_investigation_query(prompt, tenant_id)
-    if not target_fn and enh.get("best_target"):
-        target_fn = enh["best_target"]
-    if not target_file and enh.get("best_file"):
-        target_file = enh["best_file"]
-    if not entrypoint_fn and enh.get("best_entrypoint"):
-        entrypoint_fn = enh["best_entrypoint"]
-
-    # 3. Classify into CODEBASE_ACTION vs REPOSITORY_INVESTIGATION
+    # Classify intent dynamically
     is_action = any(w in p_lower for w in [
-        "fix", "remediate", "patch", "modify", "update the timeout", "apply patch",
-        "generate a patch", "suggest a fix", "resolve 504", "propose an actionable code patch"
+        "fix", "remediate", "patch", "modify", "update", "apply patch", "generate a patch", "suggest a fix", "refactor"
     ])
-    is_triage = any(w in p_lower for w in ["504", "timeout", "incident", "failing", "flash-sale", "triage", "error", "errors", "cause"])
-    is_blast = any(w in p_lower for w in ["blast radius", "pagerank", "systemic risk", "upstream", "rotates its key", "hotspot", "callers", "who calls", "impact", "rank", "break if"])
-    is_provenance = any(w in p_lower for w in ["who authored", "author", "governs", "governing", "adr", "decision tag", "provenance", "git blame", "owner", "ownership"])
-    is_inspection = any(w in p_lower for w in ["explain", "how does", "what does", "walkthrough", "inspect", "show code", "architecture", "overview", "describe", "source"])
+    is_blast = any(w in p_lower for w in [
+        "blast radius", "pagerank", "systemic risk", "upstream", "hotspot", "callers", "who calls", "impact", "rank", "break if"
+    ])
+    is_provenance = any(w in p_lower for w in [
+        "who authored", "author", "governs", "governing", "adr", "decision tag", "provenance", "git blame", "owner", "ownership"
+    ])
+    is_inspection = any(w in p_lower for w in [
+        "explain", "how does", "what does", "walkthrough", "inspect", "show code", "architecture", "overview", "describe", "source"
+    ])
 
-    has_target = bool(target_fn or target_file)
-    has_incident_signals = any(w in p_lower for w in ["504", "flash-sale", "decrypt_card_token", "vault_client", "post_checkout", "settle_payment", "adr-042", "gateway timeout"])
-
-    if is_action and has_target:
+    if is_action and (target_fn or target_file):
         category = "codebase_action"
         intent = "codebase_action"
         sub_category = "patch_remediation"
-    elif is_triage and (has_target or has_incident_signals):
-        category = "repository_investigation"
-        intent = "repository_investigation"
-        sub_category = "incident_triage"
-    elif is_blast and has_target:
+    elif is_blast:
         category = "repository_investigation"
         intent = "repository_investigation"
         sub_category = "blast_radius_audit"
-    elif is_provenance and (has_target or "adr" in p_lower):
+    elif is_provenance:
         category = "repository_investigation"
         intent = "repository_investigation"
         sub_category = "provenance_governance"
-    elif is_inspection and has_target:
+    elif is_inspection and (target_fn or target_file):
         category = "repository_investigation"
         intent = "repository_investigation"
         sub_category = "code_inspection"
     else:
-        if has_target:
-            category = "repository_investigation"
-            intent = "repository_investigation"
-            sub_category = "code_inspection"
-        else:
-            category = "general_question"
-            intent = "general_question"
-            sub_category = "general_inquiry"
+        category = "repository_investigation"
+        intent = "repository_investigation"
+        sub_category = "incident_triage"
 
     return {
         "category": category,
@@ -754,38 +621,13 @@ def execute_deterministic_reasoner(
 
     # 1. GENERAL QUESTION (0 MCP tools needed)
     if category in ["general_question", "general_code_agent"]:
-        p_lower = prompt.lower()
-        if "pagerank" in p_lower:
-            headline = "FalkorDB GraphBLAS PageRank Algorithm Overview"
-            action_plan = (
-                "PageRank in ProofStack is executed using FalkorDB's native GraphBLAS integration (`algo.pageRank`).\n\n"
-                "• Mathematical Foundation: Iteratively calculates eigenvector centrality over directed graph edges (`:CALLS`).\n"
-                "• Structural Centrality: Identifies high-centrality hotspot functions that many execution paths transit through.\n"
-                "• Architecture Safety: Functions with elevated PageRank represent systemic risk points; modifications to their contract require multi-hop caller auditing."
-            )
-        elif "ast" in p_lower:
-            headline = "Abstract Syntax Tree (AST) Code Representation in FalkorDB"
-            action_plan = (
-                "ProofStack converts repository source code into AST symbol trees before ingestion into FalkorDB.\n\n"
-                "• Extraction: Extracts functions, methods, classes, and call invocations with qualified names and line spans.\n"
-                "• Symbol Identity: Employs deterministic logical identifiers (`repo:module:qname`) independent of trivial line shifts.\n"
-                "• Relationship Graph: Models syntactic calls as `(:Function)-[:CALLS]->(:Function)` and scope as `(:Module)-[:DEFINES]->(:Function)`."
-            )
-        elif "graphblas" in p_lower:
-            headline = "GraphBLAS Linear Algebra Graph Processing in FalkorDB"
-            action_plan = (
-                "GraphBLAS provides matrix-based graph algorithms executed at hardware speed within FalkorDB.\n\n"
-                "• Adjacency Matrices: Sparse matrix operations represent node adjacency and execution paths.\n"
-                "• Scalability: Allows computing PageRank, BFS traversal, and multi-hop reachability in sub-millisecond time."
-            )
-        else:
-            headline = f"Conceptual Synthesis: '{prompt[:90]}'"
-            action_plan = (
-                f"ProofStack Direct Inquiry Response ({tenant_id}):\n\n"
-                f"1. Context: Conceptual inquiries that do not depend on repository-specific graph traversal are resolved directly with 0 tool calls to ensure zero latency.\n"
-                f"2. Graph Context: All repository AST symbols, commits, ADRs, and episodic findings are indexed in FalkorDB `repo:{tenant_id}`.\n"
-                f"3. Next Steps: To investigate repository execution paths, blast radius, or recent changes, specify a repository question or target function."
-            )
+        headline = f"Conceptual Synthesis: '{prompt[:90]}'"
+        action_plan = (
+            f"Direct response for inquiry: {prompt}\n\n"
+            f"• Conceptual inquiries that do not require repository graph traversal are resolved directly with zero MCP tool latency.\n"
+            f"• Connected repository entities (AST functions, call graphs, commits, ADRs, episodic memory) are indexed in FalkorDB graph 'repo:{tenant_id}'.\n"
+            f"• To inspect code structure, trace execution paths, or analyze blast radius, specify a function or component in your question."
+        )
 
         return {
             "tenant_graph": f"repo:{tenant_id}",
@@ -808,15 +650,49 @@ def execute_deterministic_reasoner(
             "agent_trace": [],
         }
 
-    # Resolve fallbacks if target was unspecified but query is an investigation
+    # Resolve target if unspecified by inspecting graph hotspots dynamically
     if not actual_target:
-        actual_target = "decrypt_card_token" if tenant_id == "sample-fintech" else "process_data"
-    if not actual_entrypoint:
-        actual_entrypoint = "post_checkout_endpoint" if tenant_id == "sample-fintech" else "main"
-    if not actual_file:
-        actual_file = "vault_client.py" if tenant_id == "sample-fintech" else "main.py"
+        try:
+            hotspots_data = mcp_pagerank_hotspots(tenant_id)
+            hs = hotspots_data.get("hotspots", [])
+            if hs:
+                actual_target = hs[0].get("function_name")
+                actual_file = hs[0].get("file")
+        except Exception:
+            pass
 
-    # 2. SOURCE CODE INSPECTION (1-2 MCP tools: symbol + read_code)
+    if not actual_target:
+        msg = f"No code symbols identified in repository '{tenant_id}' for query: '{prompt}'."
+        return {
+            "tenant_graph": f"repo:{tenant_id}",
+            "target_function": None,
+            "llm_mode": "autonomous_heuristic",
+            "engine_label": "ProofStack Code Agent",
+            "all_highlighted_nodes": [],
+            "execution_path": {"path_found": False, "nodes": [], "edges": [], "hops": -1},
+            "synthesis": {
+                "response_type": "investigation_report",
+                "message": msg,
+                "headline": msg,
+                "action_plan": "Specify a function, file, or symbol in the repository to investigate.",
+                "primary_owner": "Unassigned",
+                "governing_adr": "None recorded",
+                "upstream_blast_count": 0,
+            },
+            "evidence_registry": [],
+            "patch": check_and_validate_diff_patch(None, tenant_id),
+            "agent_trace": [],
+        }
+
+    if not actual_file:
+        try:
+            sym_lookup = mcp_find_symbol(actual_target, tenant_id)
+            best_sym = sym_lookup.get("best_match") or {}
+            actual_file = best_sym.get("file_path") or f"{actual_target}.py"
+        except Exception:
+            actual_file = f"{actual_target}.py"
+
+    # 2. SOURCE CODE INSPECTION (symbol + read_code)
     if category == "code_inspection" or q_info.get("sub_category") == "code_inspection":
         _trace(
             "mcp_find_symbol",
@@ -834,11 +710,7 @@ def execute_deterministic_reasoner(
         )
         total_lines = r_code.get("total_lines", 0)
         headline = f"Source inspection of '{actual_file}' ({total_lines} lines) grounded in FalkorDB graph."
-        action_plan = (
-            f"Inspected implementation of {actual_file} in repository {tenant_id}.\n"
-            f"FalkorDB graph contains indexed AST nodes for functions in this module. "
-            f"All calls adhere to architectural constraints recorded in graph metadata."
-        )
+        action_plan = f"Inspected implementation of {actual_file} in repository {tenant_id}."
         evidence_registry = _build_deterministic_evidence(agent_trace)
         return {
             "tenant_graph": f"repo:{tenant_id}",
@@ -861,7 +733,7 @@ def execute_deterministic_reasoner(
             "agent_trace": agent_trace,
         }
 
-    # 3. PROVENANCE & GOVERNANCE QUERY (2 MCP tools: provenance + episodic memory)
+    # 3. PROVENANCE & GOVERNANCE QUERY (provenance + episodic memory)
     if category == "provenance_governance" or q_info.get("sub_category") == "provenance_governance":
         r_prov = _trace(
             "mcp_company_brain_provenance",
@@ -878,16 +750,15 @@ def execute_deterministic_reasoner(
             "EpisodicMemoryAgent",
         )
         chain = r_prov.get("provenance_chain", [])
-        primary_owner = chain[0]["engineer_name"] if chain else "Aarav Mehta"
-        governing_adr = chain[0]["decision_tag"] if chain else "ADR-042"
+        primary_owner = chain[0].get("engineer_name", "Unassigned") if chain else "Unassigned"
+        governing_adr = chain[0].get("decision_tag", "None recorded") if chain else "None recorded"
         memories_count = r_mem.get("memories_found", 0)
 
-        headline = f"Authored by {primary_owner}, governed by {governing_adr}, with {memories_count} recorded incident findings on '{actual_target}'."
+        headline = f"Symbol '{actual_target}': authored by {primary_owner}, governed by {governing_adr}, with {memories_count} recorded incident findings."
         action_plan = (
             f"FalkorDB company brain provenance confirms that '{actual_target}' was authored by {primary_owner} "
-            f"and is strictly governed by architectural decision {governing_adr} in commit {chain[0].get('commit_sha', 'c0ffee') if chain else 'HEAD'}. "
-            f"Prior episodic finding mem-001 documents gRPC timeout sensitivities under flash-sale load. "
-            f"Any policy updates should be coordinated with {primary_owner} ({governing_adr} owner)."
+            f"and governed by architectural decision {governing_adr}. "
+            f"Prior episodic findings: {memories_count} recorded."
         )
         evidence_registry = _build_deterministic_evidence(agent_trace)
         return {
@@ -936,13 +807,11 @@ def execute_deterministic_reasoner(
         )
         impact_count = r_blast.get("total_impacted_functions", 0)
         callers = [c.get("impacted_function") for c in r_blast.get("impacted_callers", [])]
-        headline = f"FalkorDB AST traversal reveals {impact_count} upstream callers affected if '{actual_target}' changes contract. Structural risk ranked with GraphBLAS PageRank."
+        headline = f"FalkorDB AST traversal reveals {impact_count} upstream callers affected if '{actual_target}' changes contract."
         action_plan = (
             f"Security Audit & Dependency Analysis for '{actual_target}':\n"
-            f"• Upstream Callers Impacted ({impact_count}): {', '.join(callers) if callers else 'None'}.\n"
-            f"• Maximum Hop Depth: {max([c.get('hop_depth', 1) for c in r_blast.get('impacted_callers', [])] or [1])} hops.\n"
-            f"• FalkorDB GraphBLAS PageRank indicates highest centrality on the checkout execution path. "
-            f"Any key rotation or contract change must maintain dual-key compatibility across all callers."
+            f"• Upstream Callers Impacted ({impact_count}): {', '.join(callers[:10]) if callers else 'None'}.\n"
+            f"• Modifications to {actual_target} must preserve compatibility with all callers."
         )
         evidence_registry = _build_deterministic_evidence(agent_trace)
         return {
@@ -957,8 +826,8 @@ def execute_deterministic_reasoner(
                 "message": headline,
                 "headline": headline,
                 "action_plan": action_plan,
-                "primary_owner": "Aarav Mehta",
-                "governing_adr": "ADR-042",
+                "primary_owner": "None recorded",
+                "governing_adr": "None recorded",
                 "upstream_blast_count": impact_count,
             },
             "evidence_registry": evidence_registry,
@@ -966,23 +835,7 @@ def execute_deterministic_reasoner(
             "agent_trace": agent_trace,
         }
 
-    # 5. CODEBASE ACTION (Grounded patch with sandbox validation)
-    patch_diff = (
-        "--- a/vault_client.py\n"
-        "+++ b/vault_client.py\n"
-        "@@ -7,9 +7,9 @@\n"
-        " def decrypt_card_token(token: str) -> dict:\n"
-        "-    \"\"\"Decrypts PCI card token using a strict 50ms gRPC timeout (ADR-042).\"\"\"\n"
-        "+    \"\"\"Decrypts PCI card token using resilient 120ms gRPC timeout (remediated INC-8410).\"\"\"\n"
-        "     secret = fetch_signing_key(\"primary\")\n"
-        "     if not token.startswith(\"tok_\"):\n"
-        "         raise ValueError(\"Invalid token prefix\")\n"
-        "     return {\"pan_last4\": \"4242\", \"secret_used\": secret}\n"
-        " \n"
-        "-# Enforced timeout_ms = 50 per ADR-042\n"
-        "+# Remediated timeout_ms = 120 per Incident Finding mem-001 & Agent Patch\n"
-    )
-
+    # 5. CODEBASE ACTION
     if category == "codebase_action":
         _trace(
             "mcp_find_symbol",
@@ -994,38 +847,12 @@ def execute_deterministic_reasoner(
         _trace(
             "mcp_read_code_file",
             "Track 1: Code Invariant Inspection",
-            f"Inspecting '{actual_file}' before validating patch",
+            f"Inspecting '{actual_file}' before patch evaluation",
             mcp_read_code_file(actual_file, tenant_id),
             "CodeInspectionAgent",
         )
-        r_val = _trace(
-            "mcp_validate_patch",
-            "Track 1 & Action: Verified Patch Sandbox",
-            f"Validating remediation patch in isolated sandbox for '{actual_file}'",
-            mcp_validate_patch(actual_file, patch_diff, tenant_id),
-            "PatchValidationAgent",
-        )
-        headline = f"Verified remediation patch generated for '{actual_target}': AST syntax valid. Git commit protected behind human approval."
-        action_plan = (
-            f"Remediation patch validated in isolated sandbox for {actual_file}.\n"
-            f"AST parsing passed (+{r_val.get('lines_added', 2)} / -{r_val.get('lines_deleted', 2)} lines). "
-            f"Commit is protected; click 'Apply Patch & Commit to Git' to commit."
-        )
-        _trace(
-            "mcp_write_episodic_memory",
-            "Track 1: Graph-Driven Action",
-            "Persisted verified patch finding into FalkorDB episodic memory",
-            mcp_write_episodic_memory(
-                function_name=actual_target,
-                agent_role="PatchAgent",
-                summary=headline,
-                remediation=action_plan,
-                verification_status="syntax_valid",
-                session_id=f"session-{uuid.uuid4().hex[:4]}",
-                tenant_id=tenant_id,
-            ),
-            "CoordinatorStateAgent",
-        )
+        headline = f"Codebase remediation scope evaluated for '{actual_target}' in '{actual_file}'."
+        action_plan = f"Inspected {actual_file}. Use LLM-enabled mode or 'Suggest a Patch' for automated patch generation."
         evidence_registry = _build_deterministic_evidence(agent_trace)
         return {
             "tenant_graph": f"repo:{tenant_id}",
@@ -1039,54 +866,53 @@ def execute_deterministic_reasoner(
                 "message": headline,
                 "headline": headline,
                 "action_plan": action_plan,
-                "primary_owner": "Aarav Mehta",
-                "governing_adr": "ADR-042",
-                "upstream_blast_count": 5,
+                "primary_owner": "None recorded",
+                "governing_adr": "None recorded",
+                "upstream_blast_count": 0,
             },
             "evidence_registry": evidence_registry,
-            "patch": check_and_validate_diff_patch({
-                "file_path": actual_file,
-                "diff": patch_diff,
-                "explanation": "Remediated gRPC timeout from 50ms to 120ms with AST sandbox verification.",
-                "commit_message": f"[FIX-8410] Resolve timeout in {actual_target} per verified patch sandbox",
-            }, tenant_id),
+            "patch": check_and_validate_diff_patch(None, tenant_id),
             "agent_trace": agent_trace,
         }
 
-    # 6. INCIDENT TRIAGE & REPAIR (Comprehensive graph investigation across all tools)
+    # 6. INCIDENT TRIAGE & REPAIR (Graph investigation across tools)
     r_sym = _trace(
         "mcp_find_symbol",
         "Track 1: MCP Symbol Resolution",
-        f"Resolved incident mention of '{actual_target}' to an exact FalkorDB graph node",
+        f"Resolved mention of '{actual_target}' to an exact FalkorDB graph node",
         mcp_find_symbol(actual_target, tenant_id),
         "SymbolResolverAgent",
     )
     r_mem = _trace(
         "mcp_recall_episodic_memory",
         "Track 1: Graph Incident Memory",
-        f"Recalled prior incident memories attached to '{actual_target}'",
+        f"Recalling prior incident memories attached to '{actual_target}'",
         mcp_recall_episodic_memory(actual_target, tenant_id),
         "EpisodicMemoryAgent",
     )
     r_neigh = _trace(
         "mcp_explore_graph_neighborhood",
         "Track 1: Exploratory Graph Discovery",
-        f"Exploring 1-hop graph neighborhood around '{actual_target}' to discover incoming/outgoing dependencies",
+        f"Exploring 1-hop graph neighborhood around '{actual_target}'",
         mcp_explore_graph_neighborhood(actual_target, depth=1, tenant_id=tenant_id),
         "GraphExplorationAgent",
     )
-    r_path = _trace(
-        "mcp_shortest_execution_path",
-        "Track 1: Multi-Hop shortestPath",
-        f"FalkorDB shortestPath from '{actual_entrypoint}' to '{actual_target}' (actual Cypher result)",
-        mcp_shortest_execution_path(actual_entrypoint, actual_target, tenant_id),
-        "GraphPathAgent",
-    )
+
+    r_path = {}
+    if actual_entrypoint and actual_entrypoint != actual_target:
+        r_path = _trace(
+            "mcp_shortest_execution_path",
+            "Track 1: Multi-Hop shortestPath",
+            f"FalkorDB shortestPath from '{actual_entrypoint}' to '{actual_target}'",
+            mcp_shortest_execution_path(actual_entrypoint, actual_target, tenant_id),
+            "GraphPathAgent",
+        )
+
     r_changes = _trace(
         "mcp_find_changes_on_path",
         "Track 1 & 3: Temporal Changes on Path",
-        f"Tracing Git commits along execution path ({actual_entrypoint} -> {actual_target}) with causation verification",
-        mcp_find_changes_on_path(entrypoint_fn=actual_entrypoint, target_fn=actual_target, tenant_id=tenant_id),
+        f"Tracing Git commits along execution path for '{actual_target}'",
+        mcp_find_changes_on_path(entrypoint_fn=actual_entrypoint or actual_target, target_fn=actual_target, tenant_id=tenant_id),
         "TemporalLineageAgent",
     )
     r_blast = _trace(
@@ -1096,43 +922,44 @@ def execute_deterministic_reasoner(
         mcp_ast_blast_radius(actual_target, tenant_id),
         "ASTBlastRadiusAgent",
     )
-    impact_count = r_blast["total_impacted_functions"]
+    impact_count = r_blast.get("total_impacted_functions", 0)
 
     r_prov = _trace(
         "mcp_company_brain_provenance",
         "Track 1: Explainable Provenance",
-        f"Traced author and governing ADR/INC tag for '{actual_target}'",
+        f"Tracing author and governing ADR/INC tag for '{actual_target}'",
         mcp_company_brain_provenance(actual_target, tenant_id),
         "CompanyBrainAgent",
     )
-    chain         = r_prov.get("provenance_chain", [])
-    primary_owner = chain[0]["engineer_name"] if chain else "Aarav Mehta"
-    governing_adr = chain[0]["decision_tag"]  if chain else "ADR-042"
+    chain = r_prov.get("provenance_chain", [])
+    primary_owner = chain[0].get("engineer_name", "Unassigned") if chain else "Unassigned"
+    governing_adr = chain[0].get("decision_tag", "None recorded") if chain else "None recorded"
 
     r_code = _trace(
         "mcp_read_code_file",
         "Track 1: Code Invariant Inspection",
-        f"Inspected {actual_file} source to verify implementation before patch generation",
+        f"Inspecting {actual_file} source to verify implementation",
         mcp_read_code_file(actual_file, tenant_id),
         "CodeInspectionAgent",
     )
 
-    path_names = r_path.get("explainable_path", [actual_entrypoint, actual_target])
-    path_str   = " -> ".join(path_names) if path_names else f"{actual_entrypoint} -> {actual_target}"
-    hops       = r_path.get("hops", len(path_names) - 1)
+    path_names = r_path.get("explainable_path", [])
+    path_str = " -> ".join(path_names) if path_names else ""
+    hops = r_path.get("hops", len(path_names) - 1 if path_names else 0)
 
-    headline = (
-        f"Root cause: Strict 50ms gRPC timeout enforced by {governing_adr} in '{actual_target}' "
-        f"causes cascading 504 timeouts across {impact_count} upstream callers. "
-        f"Graph path ({hops} hops): {path_str}. Confirmed by prior finding mem-001."
-    )
+    if r_path.get("path_found"):
+        headline = f"Execution path verified ({hops} hops: {path_str}). Target '{actual_target}' reaches {impact_count} upstream callers."
+    else:
+        headline = f"Investigation for '{actual_target}': {impact_count} upstream callers identified in graph. Provenance: {primary_owner} ({governing_adr})."
+
     action_plan = (
-        f"Increase timeout_ms from 50 to 120ms with circuit-breaker fallback in {actual_file}. "
-        f"Coordinated with author {primary_owner} ({governing_adr} owner). "
-        f"Blast radius verified: {impact_count} callers affected."
+        f"Review implementation of {actual_target} in {actual_file or 'repository'}. "
+        f"Blast radius: {impact_count} callers affected. "
+        + (f"Coordinated with author {primary_owner}. " if primary_owner != "Unassigned" else "")
+        + "Click 'Suggest a Patch' for LLM-verified code remediation."
     )
 
-    r_write = _trace(
+    _trace(
         "mcp_write_episodic_memory",
         "Track 1: Graph-Driven Action",
         "Persisted synthesised triage decision into FalkorDB for future sessions",
@@ -1142,7 +969,7 @@ def execute_deterministic_reasoner(
             summary=headline,
             remediation=action_plan,
             verification_status="provenance_observed",
-            evidence=f"Path: {path_str} | Blast: {impact_count} callers | Root cause isolated in graph",
+            evidence=f"Target: {actual_target} | Blast: {impact_count} callers",
             session_id=f"session-{uuid.uuid4().hex[:4]}",
             tenant_id=tenant_id,
         ),
@@ -1152,34 +979,28 @@ def execute_deterministic_reasoner(
     evidence_registry = _build_deterministic_evidence(agent_trace)
 
     return {
-        "tenant_graph":          f"repo:{tenant_id}",
-        "target_function":       actual_target,
-        "llm_mode":              "autonomous_heuristic",
-        "engine_label":          "ProofStack Deterministic Reasoner (FalkorDB / GraphBLAS)",
+        "tenant_graph": f"repo:{tenant_id}",
+        "target_function": actual_target,
+        "llm_mode": "autonomous_heuristic",
+        "engine_label": "ProofStack Deterministic Reasoner (FalkorDB / GraphBLAS)",
         "all_highlighted_nodes": list(all_highlighted),
         "execution_path": {
             "path_found": r_path.get("path_found", False),
-            "nodes":      r_path.get("nodes", []),
-            "edges":      r_path.get("edges", []),
-            "hops":       r_path.get("hops", -1),
+            "nodes": r_path.get("nodes", []),
+            "edges": r_path.get("edges", []),
+            "hops": r_path.get("hops", -1),
         },
         "synthesis": {
-            "response_type":        "codebase_action" if q_info["category"] == "codebase_action" else "investigation_report",
-            "message":              headline,
-            "headline":             headline,
-            "action_plan":          action_plan,
-            "primary_owner":        primary_owner,
-            "governing_adr":        governing_adr,
+            "response_type": "codebase_action" if q_info["category"] == "codebase_action" else "investigation_report",
+            "message": headline,
+            "headline": headline,
+            "action_plan": action_plan,
+            "primary_owner": primary_owner,
+            "governing_adr": governing_adr,
             "upstream_blast_count": impact_count,
         },
         "evidence_registry": evidence_registry,
-        "patch": {
-            "file_path":      actual_file,
-            "diff":           "",
-            "explanation":    "No patch generated yet. Click 'Suggest a Patch' to generate remediation diff.",
-            "commit_message": f"[FIX-8410] Resolve 504 gRPC timeout in {actual_target} per FalkorDB incident memory",
-            "validation_status": "unvalidated",
-        },
+        "patch": check_and_validate_diff_patch(None, tenant_id),
         "agent_trace": agent_trace,
     }
 
@@ -1301,8 +1122,8 @@ def _extract_evidence_from_result(tool_name: str, result: dict) -> Optional[dict
         valid = result.get("syntax_valid", False)
         status = STATUS_SYNTAX_VALID if valid else STATUS_HYPOTHESIS
         claim = (
-            f"Patch sandbox verified: AST valid (+{result.get('lines_added', 0)} / -{result.get('lines_deleted', 0)} lines)"
-            if valid else f"Patch sandbox rejected: {result.get('error', 'Syntax check failed')}"
+            f"Patch AST verified: syntax valid (+{result.get('lines_added', 0)} / -{result.get('lines_deleted', 0)} lines)"
+            if valid else f"Patch AST rejected: {result.get('error', 'Syntax check failed')}"
         )
         return make_evidence_item(tool_name, claim, status, result)
 
@@ -1315,7 +1136,7 @@ def _track_badge_for(fn_name: str) -> str:
     if "changes_on_path" in fn_name:
         return "Track 1 & 3: Temporal Changes on Path"
     if "validate_patch" in fn_name:
-        return "Track 1 & Action: Verified Patch Sandbox"
+        return "Track 1 & Action: AST Verified Remediation Patch"
     if "pagerank" in fn_name:
         return "Track 1: GraphBLAS PageRank"
     if "shortest" in fn_name:
@@ -1331,6 +1152,202 @@ def _track_badge_for(fn_name: str) -> str:
     if "read_code" in fn_name:
         return "Track 1: Code Invariant Inspection"
     return "Track 1: Connected Data"
+
+
+def _is_invalid_target(name: Optional[str], file_path: Optional[str] = None) -> bool:
+    """Filter out framework boilerplate, generic classes, or migrations from target functions."""
+    if not name:
+        return True
+    n = str(name).strip()
+    if n in ("Migration", "AppConfig", "ModelAdmin", "TestCase", "object", "None", ""):
+        return True
+    if "migration" in n.lower() or n.startswith("000"):
+        return True
+    if file_path:
+        fp = str(file_path).lower()
+        if "migrations/" in fp or "migration" in fp:
+            return True
+        if "admin.py" in fp or "apps.py" in fp:
+            return True
+    return False
+
+
+def _extract_best_symbol_from_trace(agent_trace: list, candidate: Optional[str] = None) -> Optional[str]:
+    """Find the most accurate application symbol investigated, skipping migrations or boilerplate."""
+    if candidate and not _is_invalid_target(candidate):
+        return candidate
+
+    # 1. Reverse search for AST blast radius target or inspected symbol
+    for tr in reversed(agent_trace):
+        tname = tr.get("tool_name", "")
+        res = tr.get("result")
+        if not isinstance(res, dict):
+            continue
+        if tname == "mcp_ast_blast_radius":
+            sym = res.get("target_function")
+            if sym and not _is_invalid_target(sym):
+                return sym
+        if tname in ("mcp_read_symbol_source", "mcp_ast_inspect_symbol"):
+            sym = res.get("symbol_name") or res.get("name")
+            if sym and not _is_invalid_target(sym, res.get("file_path")):
+                return sym
+
+    # 2. Reverse search through mcp_find_symbol matches
+    for tr in reversed(agent_trace):
+        if tr.get("tool_name") == "mcp_find_symbol":
+            res = tr.get("result")
+            if isinstance(res, dict):
+                for m in res.get("matches", []):
+                    m_name = m.get("name")
+                    m_file = m.get("file_path")
+                    if m_name and not _is_invalid_target(m_name, m_file):
+                        return m_name
+
+    return candidate
+
+
+def _clean_human_text(val: Any, fallback: str = "") -> str:
+    """Sanitize strings against unparsed JSON dictionaries or tool output dumps."""
+    if not val:
+        return fallback
+    if isinstance(val, dict):
+        return val.get("message") or val.get("headline") or val.get("explanation") or fallback
+    s = str(val).strip()
+    if s.startswith("{") and ('"tool"' in s or '"query"' in s or '"matches"' in s):
+        return fallback
+    # Normalize inline bullets (e.g. " - code_observed:", " - ") into clean structured newlines
+    if " - " in s or " - code_observed:" in s:
+        s = re.sub(r"\s*-\s*([a-zA-Z0-9_]+_observed):\s*", r"\n- [\1] ", s)
+        s = re.sub(r"\s+-\s+", r"\n- ", s)
+        s = re.sub(r"\n-\s*\[?[a-zA-Z0-9_]+_observed\]?:?\s*$", "", s, flags=re.MULTILINE)
+        s = s.strip()
+    return s
+
+
+def _synthesize_llm_investigation(
+    client,
+    model: str,
+    messages: list,
+    prompt: str,
+    agent_trace: list,
+    tenant_id: str,
+    evidence: list,
+    target_fn: Optional[str] = None,
+) -> dict:
+    """
+    [Track 01: Principal Developer Synthesis]
+    Synthesizes a clean, simple, actionable developer incident report based on
+    all tool observations and code inspected during the ReAct loop.
+    Guarantees no raw tool JSON and anchors to the real broken symbol.
+    """
+    code_snippets = []
+    inspected_files = []
+    impacted_callers = []
+    for tr in agent_trace:
+        tname = tr.get("tool_name", "")
+        res = tr.get("result")
+        if not isinstance(res, dict):
+            continue
+        if tname == "mcp_read_code_file":
+            fp = res.get("file_path", "")
+            lines = res.get("lines", "")
+            if fp and lines:
+                inspected_files.append(fp)
+                code_snippets.append(f"File `{fp}`:\n```\n{lines[:3000]}\n```")
+        elif tname in ("mcp_read_symbol_source", "mcp_ast_inspect_symbol"):
+            src = res.get("source") or res.get("code") or ""
+            fp = res.get("file_path") or ""
+            sym = res.get("symbol_name") or res.get("name") or ""
+            if src:
+                code_snippets.append(f"Symbol `{sym}` in `{fp}`:\n```\n{src[:2000]}\n```")
+        elif tname == "mcp_ast_blast_radius":
+            for c in res.get("impacted_callers", []):
+                impacted_callers.append(c.get("impacted_qname") or c.get("impacted_function"))
+
+    best_sym = _extract_best_symbol_from_trace(agent_trace, target_fn)
+
+    synthesis_system_prompt = (
+        "You are a Principal Software Engineer synthesizing an auditable incident investigation report.\n"
+        "Your goal is to provide a clear, simple, and technically precise explanation that any developer can immediately understand and use to fix the issue.\n\n"
+        "STRICT REQUIREMENTS:\n"
+        "1. TARGET SYMBOL: Identify the real application function/class causing the failure (e.g. `send_alert_email`). NEVER select framework boilerplate, generic classes, or migrations (NEVER `Migration`, `AppConfig`, `000X_...`).\n"
+        "2. INCIDENT SYMPTOM: Explain what failure or error occurs in plain developer terms (e.g., HTTP 500 Internal Server Error when sending alert emails).\n"
+        "3. ROOT CAUSE DIAGNOSIS: Explain the exact code mechanism causing the bug (e.g., missing environment variables EMAIL_TOOLS/EMAIL_PASS causing unhandled TypeError or SMTPAuthenticationError without try/except).\n"
+        "4. ACTION PLAN: Provide numbered, clear, step-by-step guidance for a developer to resolve and verify.\n"
+        "5. REMEDIATION PATCH: Do NOT generate code diff patches during this initial investigation phase. Diffs are generated strictly on-demand when the developer explicitly clicks 'Generate Patch'. Always set patch diff to \"\" and status to \"not_requested\".\n"
+        "6. CLEAN TEXT: Output clean, professional technical text. NEVER output raw JSON, tool dictionaries, or code markers in the headline/message.\n\n"
+        "Return strictly a JSON object with this schema:\n"
+        "{\n"
+        '  "response_type": "investigation_report",\n'
+        '  "target_function": "exact_function_name",\n'
+        '  "target_file": "relative/path/to/file.py",\n'
+        '  "headline": "Concise 1-sentence developer diagnosis",\n'
+        '  "message": "Clear 2-3 sentence technical explanation of the failure mechanism and resolution.",\n'
+        '  "action_plan": "1. Step one...\\n2. Step two...",\n'
+        '  "primary_owner": "Engineer name or Unassigned",\n'
+        '  "governing_adr": "ADR ID or None recorded",\n'
+        '  "upstream_blast_count": 0,\n'
+        '  "patch": {\n'
+        '    "file_path": "path/to/file.py",\n'
+        '    "diff": "",\n'
+        '    "explanation": "Remediation patch awaiting developer request via Generate Patch.",\n'
+        '    "commit_message": "fix: description",\n'
+        '    "status": "not_requested"\n'
+        '  }\n'
+        "}"
+    )
+
+    user_summary_content = (
+        f"Repository: repo:{tenant_id}\n"
+        f"Incident Inquiry: {prompt}\n"
+        f"Candidate Target Symbol: {best_sym or 'None'}\n"
+        f"Inspected Files: {', '.join(set(inspected_files)) if inspected_files else 'None'}\n\n"
+    )
+    if code_snippets:
+        user_summary_content += "Observed Code Context:\n" + "\n\n".join(code_snippets[:3]) + "\n\n"
+    if impacted_callers:
+        user_summary_content += f"Impacted Callers: {', '.join(impacted_callers[:5])}\n\n"
+    user_summary_content += "Please synthesize the final incident diagnosis and remediation report JSON now."
+
+    synth_messages = [
+        {"role": "system", "content": synthesis_system_prompt},
+        {"role": "user", "content": user_summary_content},
+    ]
+
+    try:
+        synth_resp = client.chat.completions.create(
+            model=model,
+            messages=synth_messages,
+            response_format={"type": "json_object"} if (model and ("gpt-4" in model or "gpt-5" in model)) else None,
+        )
+        content = synth_resp.choices[0].message.content or ""
+        clean_json = re.sub(r"^```(?:json)?", "", content.strip(), flags=re.MULTILINE)
+        clean_json = re.sub(r"```$", "", clean_json.strip(), flags=re.MULTILINE).strip()
+        parsed = json.loads(clean_json)
+        if isinstance(parsed, dict) and (parsed.get("headline") or parsed.get("message")):
+            return parsed
+    except Exception as exc:
+        print(f"[!] _synthesize_llm_investigation failed: {exc}")
+
+    return {
+        "response_type": "investigation_report",
+        "target_function": best_sym,
+        "target_file": inspected_files[0] if inspected_files else "",
+        "headline": f"Investigation of {best_sym or prompt[:60]}",
+        "message": f"Identified defect in {best_sym or 'application component'} based on repository AST and graph inspection.",
+        "action_plan": "Review code inspection findings and apply recommended configuration/remediation.",
+        "primary_owner": "Unassigned",
+        "governing_adr": "None recorded",
+        "upstream_blast_count": len(impacted_callers),
+        "patch": {
+            "file_path": inspected_files[0] if inspected_files else "",
+            "diff": "",
+            "explanation": "Remediation patch awaiting developer request via 'Suggest a Patch'.",
+            "commit_message": f"fix: resolve {best_sym or 'issue'}",
+            "status": "not_requested",
+            "validation_status": "none"
+        }
+    }
 
 
 def run_llm_mcp_agent(
@@ -1442,25 +1459,33 @@ def run_llm_mcp_agent(
 
                 messages.append(_build_tool_observation(tc, tool_result))
 
-        last_content = (
-            messages[-1].get("content")
-            if isinstance(messages[-1], dict)
-            else messages[-1].content
-        ) or ""
+        last_msg = messages[-1] if messages else None
+        last_role = last_msg.get("role") if isinstance(last_msg, dict) else getattr(last_msg, "role", None)
+        last_content = (last_msg.get("content") if isinstance(last_msg, dict) else getattr(last_msg, "content", "")) or ""
         parsed: dict = {}
-        if last_content:
+        if last_role == "assistant" and last_content:
             try:
                 clean_json = re.sub(r"^```(?:json)?", "", last_content.strip(), flags=re.MULTILINE)
                 clean_json = re.sub(r"```$", "", clean_json.strip(), flags=re.MULTILINE).strip()
                 parsed = json.loads(clean_json)
             except Exception:
-                parsed = {
-                    "headline":    last_content[:200],
-                    "message":     last_content,
-                    "action_plan": last_content,
-                }
+                parsed = {}
 
-        is_direct = (parsed.get("response_type") == "direct_response") or (len(agent_trace) == 0)
+        # If parsed is missing headline/message, or was raw tool output, perform dedicated synthesis
+        is_tool_dict = bool(parsed.get("tool") or "query" in parsed or "matches" in parsed)
+        if not parsed or is_tool_dict or not parsed.get("headline") or not parsed.get("message"):
+            parsed = _synthesize_llm_investigation(
+                client=client,
+                model=model,
+                messages=messages,
+                prompt=prompt,
+                agent_trace=agent_trace,
+                tenant_id=tenant_id,
+                evidence=evidence,
+                target_fn=target_fn,
+            )
+
+        is_direct = (parsed.get("response_type") == "direct_response") or (len(agent_trace) == 0 and parsed.get("response_type") != "investigation_report")
 
         if is_direct:
             response_type = "direct_response"
@@ -1479,31 +1504,46 @@ def run_llm_mcp_agent(
             highlighted_nodes = []
         else:
             response_type = parsed.get("response_type", "investigation_report")
-            final_target_fn = function_name or parsed.get("target_function")
-            if not final_target_fn:
-                for tr in agent_trace:
-                    if tr.get("tool_name") == "mcp_find_symbol" and isinstance(tr.get("result"), dict):
-                        m = tr["result"].get("matches", [])
-                        if m:
-                            final_target_fn = m[0].get("name")
-                            break
-            if not final_target_fn and ("decrypt_card_token" in prompt or "vault" in prompt):
-                final_target_fn = "decrypt_card_token"
+            final_target_fn = _extract_best_symbol_from_trace(
+                agent_trace,
+                function_name or parsed.get("target_function")
+            )
+            target_file_cand = (
+                (parsed.get("patch") if isinstance(parsed.get("patch"), dict) else {}).get("file_path")
+                or parsed.get("target_file")
+                or ""
+            )
+            # Patch diffs are generated strictly on-demand when developer clicks 'Suggest a Patch'
+            patch_data = {
+                "file_path": target_file_cand,
+                "diff": "",
+                "explanation": "Remediation patch awaiting developer request via 'Suggest a Patch'.",
+                "commit_message": f"fix: remediate {final_target_fn or 'issue'}",
+                "status": "not_requested",
+                "validation_status": "none",
+            }
 
-            if "patch" not in parsed or not isinstance(parsed.get("patch"), dict):
-                patch_data = {
-                    "file_path": "vault_client.py" if final_target_fn == "decrypt_card_token" else "",
-                    "diff": "",
-                    "explanation": "No patch generated yet. Click 'Suggest a Patch' to generate remediation diff.",
-                    "commit_message": f"[FIX-8410] Remediate {final_target_fn or 'issue'}",
-                }
-            else:
-                patch_data = parsed["patch"]
+            primary_owner = parsed.get("primary_owner")
+            governing_adr = parsed.get("governing_adr")
+            upstream_blast_count = parsed.get("upstream_blast_count")
 
-            primary_owner = parsed.get("primary_owner", "Aarav Mehta")
-            governing_adr = parsed.get("governing_adr", "ADR-042")
-            upstream_blast_count = parsed.get("upstream_blast_count", 5)
-            action_plan = parsed.get("action_plan", "Inquiry processed against connected FalkorDB data.")
+            for tr in agent_trace:
+                res = tr.get("result")
+                if not isinstance(res, dict):
+                    continue
+                if tr.get("tool_name") == "mcp_company_brain_provenance" and not primary_owner:
+                    pchain = res.get("provenance_chain", [])
+                    if pchain:
+                        primary_owner = pchain[0].get("engineer_name")
+                        if not governing_adr:
+                            governing_adr = pchain[0].get("decision_tag")
+                if tr.get("tool_name") == "mcp_ast_blast_radius" and upstream_blast_count is None:
+                    upstream_blast_count = res.get("total_impacted_functions")
+
+            primary_owner = primary_owner or "Unassigned"
+            governing_adr = governing_adr or "None recorded"
+            upstream_blast_count = upstream_blast_count if upstream_blast_count is not None else 0
+            action_plan = parsed.get("action_plan") or "Investigation completed against connected FalkorDB data."
             evidence_registry = evidence
             highlighted_nodes = list(all_highlighted)
 
@@ -1513,15 +1553,17 @@ def run_llm_mcp_agent(
         return {
             "tenant_graph":          f"repo:{tenant_id}",
             "target_function":       final_target_fn,
+            "target_file":           target_file_cand if not is_direct else "",
+            "prompt":                prompt,
             "llm_mode":              engine_type,
             "engine_label":          f"ProofStack Agent ({model} on {engine_type})",
             "all_highlighted_nodes": highlighted_nodes,
             "execution_path":        execution_path,
             "synthesis": {
                 "response_type":        response_type,
-                "message":              parsed.get("message") or parsed.get("headline", "") or last_content,
-                "headline":             parsed.get("headline", prompt[:80]),
-                "action_plan":          action_plan,
+                "message":              _clean_human_text(parsed.get("message") or parsed.get("headline", ""), prompt),
+                "headline":             _clean_human_text(parsed.get("headline", prompt[:80]), prompt[:80]),
+                "action_plan":          _clean_human_text(action_plan, "Review remediation diff and apply patch."),
                 "primary_owner":        primary_owner,
                 "governing_adr":        governing_adr,
                 "upstream_blast_count": upstream_blast_count,
@@ -1575,13 +1617,32 @@ def _stream_deterministic_reasoner(
         }
         return
 
-    # Resolve fallbacks if target was unspecified but query is an investigation
+    # Resolve target if unspecified by inspecting graph hotspots dynamically
     if not actual_target:
-        actual_target = "decrypt_card_token" if tenant_id == "sample-fintech" else "process_data"
-    if not actual_entrypoint:
-        actual_entrypoint = "post_checkout_endpoint" if tenant_id == "sample-fintech" else "main"
+        try:
+            hotspots_data = mcp_pagerank_hotspots(tenant_id)
+            hs = hotspots_data.get("hotspots", [])
+            if hs:
+                actual_target = hs[0].get("function_name")
+                actual_file = hs[0].get("file")
+        except Exception:
+            pass
+
+    if not actual_target:
+        final_result = execute_deterministic_reasoner(prompt, tenant_id, None, None)
+        yield {
+            "type": "complete",
+            "final_result": final_result,
+        }
+        return
+
     if not actual_file:
-        actual_file = "vault_client.py" if tenant_id == "sample-fintech" else "main.py"
+        try:
+            sym_lookup = mcp_find_symbol(actual_target, tenant_id)
+            best_sym = sym_lookup.get("best_match") or {}
+            actual_file = best_sym.get("file_path") or f"{actual_target}.py"
+        except Exception:
+            actual_file = f"{actual_target}.py"
 
     # 2. SOURCE CODE INSPECTION (1 MCP tool: mcp_read_code_file)
     if category == "code_inspection":
@@ -1815,23 +1876,7 @@ def _stream_deterministic_reasoner(
         }
         return
 
-    # 5. INCIDENT TRIAGE & REPAIR (Comprehensive graph investigation across all tools)
-    patch_diff = (
-        "--- a/vault_client.py\n"
-        "+++ b/vault_client.py\n"
-        "@@ -7,9 +7,9 @@\n"
-        " def decrypt_card_token(token: str) -> dict:\n"
-        "-    \"\"\"Decrypts PCI card token using a strict 50ms gRPC timeout (ADR-042).\"\"\"\n"
-        "+    \"\"\"Decrypts PCI card token using resilient 120ms gRPC timeout (remediated INC-8410).\"\"\"\n"
-        "     secret = fetch_signing_key(\"primary\")\n"
-        "     if not token.startswith(\"tok_\"):\n"
-        "         raise ValueError(\"Invalid token prefix\")\n"
-        "     return {\"pan_last4\": \"4242\", \"secret_used\": secret}\n"
-        " \n"
-        "-# Enforced timeout_ms = 50 per ADR-042\n"
-        "+# Remediated timeout_ms = 120 per Incident Finding mem-001 & Agent Patch\n"
-    )
-
+    # 5. INCIDENT TRIAGE & REPAIR (Graph investigation across all tools)
     steps = [
         (
             "mcp_find_symbol",
@@ -1854,19 +1899,24 @@ def _stream_deterministic_reasoner(
             "GraphExplorationAgent",
             lambda: mcp_explore_graph_neighborhood(actual_target, depth=1, tenant_id=tenant_id),
         ),
-        (
+    ]
+
+    if actual_entrypoint and actual_entrypoint != actual_target:
+        steps.append((
             "mcp_shortest_execution_path",
             "Track 1: Multi-Hop shortestPath",
             f"FalkorDB openCypher shortestPath from '{actual_entrypoint}' to '{actual_target}'",
             "GraphPathAgent",
             lambda: mcp_shortest_execution_path(actual_entrypoint, actual_target, tenant_id),
-        ),
+        ))
+
+    steps.extend([
         (
             "mcp_find_changes_on_path",
             "Track 1 & 3: Temporal Changes on Path",
-            f"Tracing Git commits along execution path ({actual_entrypoint} -> {actual_target}) with causation verification",
+            f"Tracing Git commits along execution path for '{actual_target}'",
             "TemporalLineageAgent",
-            lambda: mcp_find_changes_on_path(entrypoint_fn=actual_entrypoint, target_fn=actual_target, tenant_id=tenant_id),
+            lambda: mcp_find_changes_on_path(entrypoint_fn=actual_entrypoint or actual_target, target_fn=actual_target, tenant_id=tenant_id),
         ),
         (
             "mcp_ast_blast_radius",
@@ -1896,7 +1946,7 @@ def _stream_deterministic_reasoner(
             "CodeInspectionAgent",
             lambda: mcp_read_code_file(actual_file, tenant_id),
         ),
-    ]
+    ])
 
     r_path = {}
     r_blast = {}
@@ -1954,24 +2004,24 @@ def _stream_deterministic_reasoner(
 
     # Persist findings to memory
     chain = r_prov.get("provenance_chain", [])
-    primary_owner = chain[0]["engineer_name"] if chain else "Aarav Mehta"
-    governing_adr = chain[0]["decision_tag"] if chain else "ADR-042"
-    impact_count = r_blast.get("total_impacted_functions", 5)
+    primary_owner = chain[0].get("engineer_name", "Unassigned") if chain else "Unassigned"
+    governing_adr = chain[0].get("decision_tag", "None recorded") if chain else "None recorded"
+    impact_count = r_blast.get("total_impacted_functions", 0)
 
-    path_names = r_path.get("explainable_path", [actual_entrypoint, actual_target])
-    path_str = " -> ".join(path_names) if path_names else f"{actual_entrypoint} -> {actual_target}"
-    hops = r_path.get("hops", len(path_names) - 1)
+    path_names = r_path.get("explainable_path", [])
+    path_str = " -> ".join(path_names) if path_names else ""
+    hops = r_path.get("hops", len(path_names) - 1 if path_names else 0)
 
-    headline = (
-        f"Root cause: Strict 50ms gRPC timeout enforced by {governing_adr} in '{actual_target}' "
-        f"causes cascading 504 timeouts across {impact_count} upstream callers. "
-        f"Graph path ({hops} hops): {path_str}. Confirmed by prior finding mem-001."
-    )
+    if r_path.get("path_found"):
+        headline = f"Execution path verified ({hops} hops: {path_str}). Target '{actual_target}' reaches {impact_count} upstream callers."
+    else:
+        headline = f"Investigation for '{actual_target}': {impact_count} upstream callers identified in graph. Provenance: {primary_owner} ({governing_adr})."
+
     action_plan = (
-        f"Increase timeout_ms from 50 to 120ms with circuit-breaker fallback in {actual_file}. "
-        f"Coordinated with author {primary_owner} ({governing_adr} owner). "
-        f"Blast radius verified: {impact_count} callers affected. "
-        f"Click 'Suggest a Patch' to generate and sandbox-verify code remediation."
+        f"Review implementation of {actual_target} in {actual_file or 'repository'}. "
+        f"Blast radius: {impact_count} callers affected. "
+        + (f"Coordinated with author {primary_owner}. " if primary_owner != "Unassigned" else "")
+        + "Click 'Suggest a Patch' for LLM-verified code remediation."
     )
 
     yield {
@@ -1989,7 +2039,7 @@ def _stream_deterministic_reasoner(
         summary=headline,
         remediation=action_plan,
         verification_status="provenance_observed",
-        evidence=f"Path: {path_str} | Blast: {impact_count} callers | Root cause isolated in graph",
+        evidence=f"Target: {actual_target} | Blast: {impact_count} callers",
         session_id=f"session-{uuid.uuid4().hex[:4]}",
         tenant_id=tenant_id,
     )
@@ -2038,13 +2088,7 @@ def _stream_deterministic_reasoner(
             "upstream_blast_count": impact_count,
         },
         "evidence_registry": evidence_registry,
-        "patch": {
-            "file_path": actual_file,
-            "diff": "",
-            "explanation": "No patch generated yet. Click 'Suggest a Patch' to generate remediation diff.",
-            "commit_message": f"[FIX-8410] Resolve 504 gRPC timeout in {actual_target} per FalkorDB incident memory",
-            "validation_status": "unvalidated",
-        },
+        "patch": check_and_validate_diff_patch(None, tenant_id),
         "agent_trace": agent_trace,
     }
 
@@ -2205,25 +2249,33 @@ def stream_agent_investigation(
             "message": "Synthesizing response...",
         }
 
-        last_content = (
-            messages[-1].get("content")
-            if isinstance(messages[-1], dict)
-            else messages[-1].content
-        ) or ""
+        last_msg = messages[-1] if messages else None
+        last_role = last_msg.get("role") if isinstance(last_msg, dict) else getattr(last_msg, "role", None)
+        last_content = (last_msg.get("content") if isinstance(last_msg, dict) else getattr(last_msg, "content", "")) or ""
         parsed: dict = {}
-        if last_content:
+        if last_role == "assistant" and last_content:
             try:
                 clean_json = re.sub(r"^```(?:json)?", "", last_content.strip(), flags=re.MULTILINE)
                 clean_json = re.sub(r"```$", "", clean_json.strip(), flags=re.MULTILINE).strip()
                 parsed = json.loads(clean_json)
             except Exception:
-                parsed = {
-                    "headline": last_content[:200],
-                    "message": last_content,
-                    "action_plan": last_content,
-                }
+                parsed = {}
 
-        is_direct = (parsed.get("response_type") == "direct_response") or (len(agent_trace) == 0)
+        # If parsed is missing headline/message, or was raw tool output, perform dedicated synthesis
+        is_tool_dict = bool(parsed.get("tool") or "query" in parsed or "matches" in parsed)
+        if not parsed or is_tool_dict or not parsed.get("headline") or not parsed.get("message"):
+            parsed = _synthesize_llm_investigation(
+                client=client,
+                model=model,
+                messages=messages,
+                prompt=prompt,
+                agent_trace=agent_trace,
+                tenant_id=tenant_id,
+                evidence=evidence,
+                target_fn=function_name,
+            )
+
+        is_direct = (parsed.get("response_type") == "direct_response") or (len(agent_trace) == 0 and parsed.get("response_type") != "investigation_report")
 
         if is_direct:
             response_type = "direct_response"
@@ -2243,50 +2295,72 @@ def stream_agent_investigation(
             highlighted_nodes = []
         else:
             response_type = parsed.get("response_type", "investigation_report")
-            final_target_fn = function_name or parsed.get("target_function")
-            if not final_target_fn:
-                for tr in agent_trace:
-                    if tr.get("tool_name") == "mcp_find_symbol" and isinstance(tr.get("result"), dict):
-                        m = tr["result"].get("matches", [])
-                        if m:
-                            final_target_fn = m[0].get("name")
-                            break
-            if not final_target_fn and ("decrypt_card_token" in prompt or "vault" in prompt):
-                final_target_fn = "decrypt_card_token"
+            final_target_fn = _extract_best_symbol_from_trace(
+                agent_trace,
+                function_name or parsed.get("target_function")
+            )
 
+            target_file_cand = (
+                (parsed.get("patch") if isinstance(parsed.get("patch"), dict) else {}).get("file_path")
+                or parsed.get("target_file")
+                or ""
+            )
+            # Patch diffs are generated strictly on-demand when developer clicks 'Suggest a Patch'
             patch_data = {
-                "file_path": "vault_client.py" if (final_target_fn == "decrypt_card_token") else (parsed.get("patch", {}).get("file_path") or ""),
+                "file_path": target_file_cand,
                 "diff": "",
+                "explanation": "Remediation patch awaiting developer request via 'Suggest a Patch'.",
+                "commit_message": f"fix: remediate {final_target_fn or 'issue'}",
                 "status": "not_requested",
-                "explanation": "No patch generated yet. Click 'Suggest a Patch' to generate remediation diff.",
-                "commit_message": f"[FIX-8410] Remediate {final_target_fn or 'issue'}",
-                "validation_status": "unvalidated",
+                "validation_status": "none",
             }
-            primary_owner = parsed.get("primary_owner", "Aarav Mehta")
-            governing_adr = parsed.get("governing_adr", "ADR-042")
-            upstream_blast_count = parsed.get("upstream_blast_count", 5)
-            action_plan = parsed.get("action_plan", "Remediation verified on graph call paths.")
+
+            primary_owner = parsed.get("primary_owner")
+            governing_adr = parsed.get("governing_adr")
+            upstream_blast_count = parsed.get("upstream_blast_count")
+
+            for tr in agent_trace:
+                res = tr.get("result")
+                if not isinstance(res, dict):
+                    continue
+                if tr.get("tool_name") == "mcp_company_brain_provenance" and not primary_owner:
+                    pchain = res.get("provenance_chain", [])
+                    if pchain:
+                        primary_owner = pchain[0].get("engineer_name")
+                        if not governing_adr:
+                            governing_adr = pchain[0].get("decision_tag")
+                if tr.get("tool_name") == "mcp_ast_blast_radius" and upstream_blast_count is None:
+                    upstream_blast_count = res.get("total_impacted_functions")
+
+            primary_owner = primary_owner or "Unassigned"
+            governing_adr = governing_adr or "None recorded"
+            upstream_blast_count = upstream_blast_count if upstream_blast_count is not None else 0
+            action_plan = parsed.get("action_plan") or "Investigation completed against connected FalkorDB data."
             evidence_registry = evidence
             highlighted_nodes = list(all_highlighted)
+
+            validated_patch = check_and_validate_diff_patch(patch_data, tenant_id)
 
         final_result = {
             "tenant_graph": f"repo:{tenant_id}",
             "target_function": final_target_fn,
+            "target_file": target_file_cand if not is_direct else "",
+            "prompt": prompt,
             "llm_mode": engine_type,
             "engine_label": f"ProofStack Agent ({model} on {engine_type})",
             "all_highlighted_nodes": highlighted_nodes,
             "execution_path": execution_path,
             "synthesis": {
                 "response_type":        response_type,
-                "message":              parsed.get("message") or parsed.get("headline", "") or last_content,
-                "headline":             parsed.get("headline", prompt[:80]),
-                "action_plan":          action_plan,
+                "message":              _clean_human_text(parsed.get("message") or parsed.get("headline", ""), prompt),
+                "headline":             _clean_human_text(parsed.get("headline", prompt[:80]), prompt[:80]),
+                "action_plan":          _clean_human_text(action_plan, "Review remediation diff and apply patch."),
                 "primary_owner":        primary_owner,
                 "governing_adr":        governing_adr,
                 "upstream_blast_count": upstream_blast_count,
             },
             "evidence_registry": evidence_registry,
-            "patch": patch_data,
+            "patch": validated_patch if not is_direct else patch_data,
             "agent_trace": agent_trace,
         }
 
@@ -2324,33 +2398,38 @@ def build_deterministic_evidence_report(
     agent_trace = investigation_data.get("agent_trace", [])
     execution_path = investigation_data.get("execution_path", {})
     patch = investigation_data.get("patch", {})
-    target_fn = investigation_data.get("target_function") or "decrypt_card_token"
+    target_fn = investigation_data.get("target_function") or ""
 
     # Derive patch status based on honest remediation principles
     has_diff = bool(patch.get("diff") and patch.get("diff").strip())
     is_valid = bool(patch.get("valid") or patch.get("validation_status") == "syntax_valid")
-    if patch.get("status"):
+    if has_diff:
+        if patch.get("status") in ["generated", "validated", "awaiting_approval", "applied", "committed"]:
+            patch_status = patch["status"]
+        else:
+            patch_status = "validated" if is_valid else "generated"
+    elif patch.get("status"):
         patch_status = patch["status"]
-    elif has_diff and is_valid:
-        patch_status = "validated"
-    elif has_diff:
-        patch_status = "generated"
     else:
         patch_status = "not_requested"
 
     # Assemble evidence refs
     ev_refs = [ev.get("evidence_id") for ev in evidence_registry if ev.get("evidence_id")]
 
+    clean_headline = _clean_human_text(synthesis.get("headline"), prompt or "Software incident investigation")
+    clean_message = _clean_human_text(synthesis.get("message"), clean_headline)
+    clean_action_plan = _clean_human_text(synthesis.get("action_plan"), "Review remediation diff and apply patch.")
+
     # Findings
     findings = []
-    if synthesis.get("headline"):
+    if clean_headline:
         findings.append({
             "finding_id": "FIND-01",
-            "claim": synthesis.get("headline"),
+            "claim": clean_headline,
             "status": "confirmed" if evidence_registry else "hypothesis",
-            "explanation": synthesis.get("message") or synthesis.get("action_plan") or "Investigation completed with graph observations.",
+            "explanation": clean_message or clean_action_plan or "Investigation completed with graph observations.",
             "evidence_refs": ev_refs[:3] if ev_refs else [],
-            "source_locations": [{"file": patch.get("file_path", "vault_client.py"), "symbol": target_fn}],
+            "source_locations": [{"file": patch.get("file_path", ""), "symbol": target_fn}],
             "limitations": ["Temporal change association is not proof of causation without code inspection."]
         })
     for idx, ev in enumerate(evidence_registry):
@@ -2369,7 +2448,7 @@ def build_deterministic_evidence_report(
     if execution_path and execution_path.get("path_found"):
         graph_paths.append({
             "path_id": "GP-01",
-            "purpose": f"Multi-hop execution path from entrypoint to {target_fn}",
+            "purpose": f"Multi-hop execution path from entrypoint to {target_fn or 'target'}",
             "path_found": True,
             "nodes": execution_path.get("nodes", []),
             "edges": execution_path.get("edges", []),
@@ -2398,17 +2477,65 @@ def build_deterministic_evidence_report(
         "limitations": ["Blast radius measures static call reachability, not runtime failure probability."]
     }
 
-    # Provenance
+    # Extract dynamic provenance from agent_trace
+    commits = []
+    engineers = []
+    adrs = []
+    analyzed_sha = None
+
+    for tr in agent_trace:
+        res = tr.get("result")
+        if not isinstance(res, dict):
+            continue
+        if tr.get("tool_name") == "mcp_company_brain_provenance":
+            for p in res.get("provenance_chain", []):
+                eng = p.get("engineer_name")
+                if eng and not any(e["name"] == eng for e in engineers):
+                    engineers.append({"name": eng, "attribution": "file_contributor", "email": p.get("engineer_email", "")})
+                dec = p.get("decision_tag")
+                if dec and not any(a["decision_id"] == dec for a in adrs):
+                    adrs.append({"decision_id": dec, "title": f"Policy governing {p.get('function_name', target_fn)}"})
+                c_sha = p.get("commit_sha")
+                if c_sha and not any(c["sha"] == c_sha for c in commits):
+                    commits.append({"sha": c_sha, "message": p.get("commit_message", "")})
+                    if not analyzed_sha:
+                        analyzed_sha = c_sha
+        elif tr.get("tool_name") == "mcp_find_changes_on_path":
+            for ch in res.get("recent_commits_on_path", []):
+                c_sha = ch.get("sha")
+                if c_sha and not any(c["sha"] == c_sha for c in commits):
+                    commits.append({"sha": c_sha, "message": ch.get("message", "")})
+                    if not analyzed_sha:
+                        analyzed_sha = c_sha
+                author = ch.get("author")
+                if author and not any(e["name"] == author for e in engineers):
+                    engineers.append({"name": author, "attribution": "commit_author"})
+
+    if not engineers and synthesis.get("primary_owner") and synthesis.get("primary_owner") != "Unassigned":
+        engineers.append({"name": synthesis.get("primary_owner"), "attribution": "file_contributor"})
+    if not adrs and synthesis.get("governing_adr") and synthesis.get("governing_adr") != "None recorded":
+        adrs.append({"decision_id": synthesis.get("governing_adr"), "title": "Governing policy"})
+
+    repo_dir = resolve_repo_dir(tenant_id)
+    if not analyzed_sha and repo_dir.exists():
+        try:
+            sha_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo_dir), capture_output=True, text=True)
+            if sha_res.returncode == 0 and sha_res.stdout.strip():
+                analyzed_sha = sha_res.stdout.strip()
+        except Exception:
+            pass
+    analyzed_sha = analyzed_sha or (commits[0]["sha"] if commits else "HEAD")
+
     provenance = {
-        "commits": [{"sha": "40e6e4f", "message": "Enforce gRPC timeout per ADR-042"}],
-        "engineers": [{"name": synthesis.get("primary_owner", "Aarav Mehta"), "attribution": "file_contributor"}],
-        "adrs": [{"decision_id": synthesis.get("governing_adr", "ADR-042"), "title": "Strict timeout policy"}],
+        "commits": commits,
+        "engineers": engineers,
+        "adrs": adrs,
         "deployments": []
     }
 
     # Remediation
     remediation = {
-        "recommended_actions": [synthesis.get("action_plan", "Increase timeout and review retry jitter.")],
+        "recommended_actions": [synthesis.get("action_plan", "Review remediation diff and apply patch.")],
         "patch": {
             "file_path": patch.get("file_path", ""),
             "explanation": patch.get("explanation", "Remediation patch recommended."),
@@ -2439,17 +2566,17 @@ def build_deterministic_evidence_report(
     return {
         "schema_version": "1.0",
         "report_status": "complete",
-        "report_title": f"Evidence Report — {synthesis.get('headline') or prompt[:60]}",
+        "report_title": f"Evidence Report — {clean_headline}",
         "repository": {
             "repository_id": f"repo:{tenant_id}",
-            "analyzed_commit_sha": "40e6e4f405e024fc1a9372e8826288829a360d22",
-            "environment": "production-checkout / kubernetes-cluster"
+            "analyzed_commit_sha": analyzed_sha,
+            "environment": f"repository-analysis / {tenant_id}"
         },
         "executive_summary": {
-            "problem": prompt or "Software incident investigation",
-            "primary_finding": synthesis.get("headline", "Investigation completed."),
+            "problem": prompt or clean_headline,
+            "primary_finding": clean_headline,
             "overall_assessment": "confirmed" if evidence_registry else "hypothesis",
-            "recommended_next_step": synthesis.get("action_plan", "Review remediation diff."),
+            "recommended_next_step": clean_action_plan,
             "evidence_refs": ev_refs
         },
         "findings": findings,
@@ -2487,6 +2614,16 @@ def generate_evidence_report(
 
     report_system_prompt = load_evidence_report_prompt()
 
+    repo_dir = resolve_repo_dir(tenant_id)
+    analyzed_sha = "HEAD"
+    if repo_dir.exists():
+        try:
+            sha_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo_dir), capture_output=True, text=True)
+            if sha_res.returncode == 0 and sha_res.stdout.strip():
+                analyzed_sha = sha_res.stdout.strip()
+        except Exception:
+            pass
+
     # Build input contract bundle matching Section 1 of prompt
     input_contract = {
         "investigation_context": {
@@ -2494,8 +2631,8 @@ def generate_evidence_report(
             "repository_id": f"repo:{tenant_id}",
             "tenant_id": tenant_id,
             "target_function": investigation_data.get("target_function"),
-            "analyzed_commit_sha": "40e6e4f405e024fc1a9372e8826288829a360d22",
-            "environment": "production-checkout / kubernetes-cluster",
+            "analyzed_commit_sha": analyzed_sha,
+            "environment": f"repository-analysis / {tenant_id}",
         },
         "investigation_trace": investigation_data.get("agent_trace", []),
         "evidence_registry": investigation_data.get("evidence_registry", []),
@@ -2533,6 +2670,11 @@ def generate_evidence_report(
 
         # Validate that the top-level keys exist
         if isinstance(parsed_report, dict) and "executive_summary" in parsed_report and "findings" in parsed_report:
+            ex = parsed_report.get("executive_summary", {})
+            if isinstance(ex, dict):
+                ex["problem"] = _clean_human_text(ex.get("problem"), prompt or "Software incident investigation")
+                ex["primary_finding"] = _clean_human_text(ex.get("primary_finding"), prompt or "Software incident investigation")
+                ex["recommended_next_step"] = _clean_human_text(ex.get("recommended_next_step"), "Review remediation diff and apply patch.")
             return parsed_report
         else:
             print("[!] Report LLM output missed required schema keys, falling back to deterministic builder.")

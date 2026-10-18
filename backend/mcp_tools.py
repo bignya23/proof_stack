@@ -38,14 +38,19 @@ def resolve_repo_dir(tenant_id: str = "sample-fintech") -> Path:
     root = Path(__file__).resolve().parent.parent
     backend = Path(__file__).resolve().parent
 
+    clean_tenant = (tenant_id or "sample-fintech").replace("repo:", "").strip()
+    if not clean_tenant:
+        clean_tenant = "sample-fintech"
+
     candidates = [
-        root / "repos" / tenant_id,
-        root / "repos" / tenant_id.replace("-", "_"),
-        root / f"{tenant_id.replace('-', '_')}_repo",
+        root / "repos" / clean_tenant,
+        root / "repos" / clean_tenant.replace("-", "_"),
+        root / f"{clean_tenant.replace('-', '_')}_repo",
+        root / clean_tenant,
+        backend / "repos" / clean_tenant,
+        backend / f"{clean_tenant.replace('-', '_')}_repo",
+        backend / clean_tenant,
         root / "sample_fintech_repo",
-        root / tenant_id,
-        backend / "repos" / tenant_id,
-        backend / f"{tenant_id.replace('-', '_')}_repo",
         backend / "sample_fintech_repo",
     ]
     for c in candidates:
@@ -238,7 +243,8 @@ def mcp_find_symbol(symbol_name: str, tenant_id: str = "sample-fintech") -> dict
            labels(n)[0]   AS entity_type,
            n.commit_sha   AS commit_sha
     ORDER BY
-      CASE WHEN n.symbol_id = $sym THEN 0
+      CASE WHEN n.file CONTAINS 'migration' OR n.name = 'Migration' THEN 9
+           WHEN n.symbol_id = $sym THEN 0
            WHEN n.name = $sym THEN 1
            WHEN toLower(n.name) = toLower($sym) THEN 2
            ELSE 3 END,
@@ -255,9 +261,13 @@ def mcp_find_symbol(symbol_name: str, tenant_id: str = "sample-fintech") -> dict
         r_name = r[0]
         r_qname = r[1]
         r_sym_id = r[2] or ""
+        r_file = r[4] or ""
 
         # Score confidence
-        if r_sym_id == symbol_name or r_name.lower() == s_clean:
+        is_migration = (r_name == "Migration") or ("migration" in r_file.lower())
+        if is_migration:
+            confidence = 0.4
+        elif r_sym_id == symbol_name or r_name.lower() == s_clean:
             confidence = 1.0
         elif s_clean in r_name.lower():
             confidence = 0.9 if r_name.lower().startswith(s_clean) else 0.8
@@ -271,7 +281,7 @@ def mcp_find_symbol(symbol_name: str, tenant_id: str = "sample-fintech") -> dict
             "qname":       r_qname,
             "symbol_id":   r_sym_id,
             "snapshot_id": r[3] or "",
-            "file_path":   r[4],
+            "file_path":   r_file,
             "start_line":  r[5],
             "loc":         r[6],
             "docstring":   r[7],
@@ -298,6 +308,8 @@ def mcp_find_symbol(symbol_name: str, tenant_id: str = "sample-fintech") -> dict
                    n.docstring    AS docstring,
                    labels(n)[0]   AS entity_type,
                    n.commit_sha   AS commit_sha
+            ORDER BY
+              CASE WHEN n.file CONTAINS 'migration' OR n.name = 'Migration' THEN 9 ELSE 0 END
             LIMIT 5
             """
             try:
@@ -723,13 +735,7 @@ def apply_diff_patch(current_content: str, patch_diff: Optional[str]) -> str:
     and partial code replacements reliably.
     """
     if not patch_diff or not patch_diff.strip():
-        return current_content.replace(
-            "strict 50ms gRPC timeout (ADR-042)",
-            "resilient 120ms gRPC timeout (remediated INC-8410)",
-        ).replace(
-            "# Enforced timeout_ms = 50 per ADR-042",
-            "# Remediated timeout_ms = 120 per Incident Finding mem-001 & Agent Patch",
-        )
+        return current_content
 
     # If the patch is already complete python code rather than a diff
     if "@@" not in patch_diff and ("def " in patch_diff or "import " in patch_diff):
@@ -822,33 +828,6 @@ def apply_diff_patch(current_content: str, patch_diff: Optional[str]) -> str:
                 result = result.replace(rem_block.strip(), add_block.strip(), 1)
                 continue
 
-    # 4. Fallback check for env override
-    if "def _env_override_timeout_ms" in patch_diff and "def _env_override_timeout_ms" not in result:
-        if "import os" not in result:
-            if "import random" in result:
-                result = result.replace("import random", "import os\nimport random", 1)
-            else:
-                result = "import os\n" + result
-
-        override_func = (
-            "DEFAULT_GRPC_TIMEOUT_MS = 120\n\n"
-            "def _env_override_timeout_ms() -> int:\n"
-            '    val = os.getenv("DECRYPT_GRPC_TIMEOUT_MS")\n'
-            "    if not val:\n"
-            "        return DEFAULT_GRPC_TIMEOUT_MS\n"
-            "    try:\n"
-            "        parsed = int(val)\n"
-            "    except ValueError:\n"
-            "        return DEFAULT_GRPC_TIMEOUT_MS\n"
-            "    return min(5000, max(50, parsed))\n\n"
-            "GRPC_TIMEOUT_MS = _env_override_timeout_ms()"
-        )
-
-        if "GRPC_TIMEOUT_MS = 120" in result:
-            result = result.replace("GRPC_TIMEOUT_MS = 120", override_func, 1)
-        elif "GRPC_TIMEOUT_MS = 50" in result:
-            result = result.replace("GRPC_TIMEOUT_MS = 50", override_func, 1)
-
     return result
 
 
@@ -926,7 +905,7 @@ def mcp_read_code_file(
 
 
 # ============================================================================
-# NEW MCP TOOLS (Exploration, Temporal Changes on Path, Verified Patch Sandbox)
+# NEW MCP TOOLS (Exploration, Temporal Changes on Path, AST Verified Remediation Patch)
 # ============================================================================
 
 @mcp.tool()
@@ -1118,26 +1097,37 @@ def mcp_validate_patch(
     tenant_id: str = "sample-fintech",
 ) -> dict:
     """
-    [Track 01 & Action: Verified Remediation Sandbox]
-    Validates a proposed code patch in an isolated simulation without modifying the repository.
+    [Track 01 & Action: AST Verified Remediation Patch]
+    Validates a proposed code patch via in-memory simulation without modifying the repository.
     Verifies AST syntax, parse validity, lines added/removed, and preserves failure logs as evidence.
     CRITICAL: Actual repository commit requires protected user approval via /api/patch/apply.
     """
+    clean_file = re.sub(r':\d+$', '', (file_path or "").strip())
     repo_dir = resolve_repo_dir(tenant_id)
-    clean_path = file_path.replace("sample_fintech_repo/", "").lstrip("/")
+    clean_path = clean_file.replace("sample_fintech_repo/", "").lstrip("/")
     target = (repo_dir / clean_path).resolve()
 
-    if not target.exists():
-        found = list(repo_dir.glob(f"**/{Path(file_path).name}"))
+    if not target.exists() or not target.is_file():
+        found = list(repo_dir.glob(f"**/{Path(clean_file).name}"))
         if found:
             target = found[0]
         else:
-            return {
-                "tool": "mcp_validate_patch",
-                "syntax_valid": False,
-                "error": f"File '{file_path}' not found in repository {repo_dir}",
-                "commit_allowed": False,
-            }
+            # Check other repos in workspace
+            root = Path(__file__).resolve().parent.parent
+            for r in (root / "repos").glob("*"):
+                if r.is_dir():
+                    r_found = list(r.glob(f"**/{Path(clean_file).name}"))
+                    if r_found:
+                        target = r_found[0]
+                        repo_dir = r
+                        break
+            if not target.exists() or not target.is_file():
+                return {
+                    "tool": "mcp_validate_patch",
+                    "syntax_valid": False,
+                    "error": f"File '{file_path}' not found in repository {repo_dir}",
+                    "commit_allowed": False,
+                }
 
     original_content = target.read_text(encoding="utf-8")
 
@@ -1180,7 +1170,7 @@ def mcp_validate_patch(
 
     return {
         "tool": "mcp_validate_patch",
-        "track": "Track 01: Verified Remediation Sandbox",
+        "track": "Track 01: AST Verified Remediation Patch",
         "file_path": str(target.relative_to(repo_dir)),
         "syntax_valid": True,
         "ast_verified": True,

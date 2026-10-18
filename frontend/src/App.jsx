@@ -348,25 +348,47 @@ export default function App() {
     if (!investigationResult) return;
     setIsGeneratingPatch(true);
     try {
+      const resolvedTenant = (
+        (investigationResult.tenant_graph || "").replace("repo:", "").trim() ||
+        (activeTenant || "").replace("repo:", "").trim() ||
+        "sample-fintech"
+      );
+      const targetFn = (
+        investigationResult.target_function ||
+        investigationResult.target_fn ||
+        ""
+      );
+      const targetFile = (
+        investigationResult.patch?.file_path ||
+        investigationResult.target_file ||
+        ""
+      );
+      const incidentCtx = (
+        investigationResult.synthesis?.headline ||
+        investigationResult.prompt ||
+        "Remediate investigated incident"
+      );
+
       const res = await fetch(`${API_BASE}/api/patch/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tenant_id: activeTenant,
-          target_fn: investigationResult.target_function || "decrypt_card_token",
-          incident_context: investigationResult.synthesis?.headline || "Remediate investigated incident",
+          tenant_id: resolvedTenant,
+          target_fn: targetFn,
+          target_file: targetFile,
+          incident_context: incidentCtx,
         })
       });
       const data = await res.json();
-      if (data.patch) {
+      if (data.patch && data.patch.diff) {
         setInvestigationResult(prev => {
           if (!prev) return prev;
           const currentEv = prev.evidence_registry || [];
           const patchEvItem = {
             evidence_id: `ev-patch-${Date.now()}`,
             tool: "mcp_validate_patch",
-            claim: `Remediation patch AST verified (${data.patch.validation_status || 'syntax_valid'}) in isolated sandbox for ${data.patch.file_path}`,
-            query: `mcp_validate_patch("${data.patch.file_path}", diff, "${activeTenant}")`,
+            claim: `Remediation patch AST verified (${data.patch.validation_status || 'syntax_valid'}) for ${data.patch.file_path}`,
+            query: `mcp_validate_patch("${data.patch.file_path}", diff, "${resolvedTenant}")`,
             status: data.patch.validation_status || "syntax_valid",
             timestamp: new Date().toISOString()
           };
@@ -376,14 +398,33 @@ export default function App() {
             step: nextStep,
             tool_name: "mcp_validate_patch",
             agent_name: "PatchValidationAgent",
-            track_badge: "Track 1 & Action: Verified Patch Sandbox",
-            purpose: `Validated remediation patch in isolated sandbox for '${data.patch.file_path}'`,
+            track_badge: "Track 1 & Action: AST Verified Remediation Patch",
+            purpose: `Validated remediation patch AST syntax for '${data.patch.file_path}'`,
             result: data.validation || { syntax_valid: true, status: "syntax_valid" },
             status: "done"
           };
+          const updatedReport = prev.evidence_report ? {
+            ...prev.evidence_report,
+            remediation: {
+              ...(prev.evidence_report.remediation || {}),
+              patch: {
+                file_path: data.patch.file_path,
+                explanation: data.patch.explanation,
+                diff: data.patch.diff,
+                status: data.patch.status || "validated",
+              },
+              verification: {
+                ...(prev.evidence_report.remediation?.verification || {}),
+                syntax: data.patch.validation_status || "syntax_valid",
+                human_approval: "awaiting_approval",
+              }
+            }
+          } : null;
+
           return {
             ...prev,
             patch: data.patch,
+            evidence_report: updatedReport || prev.evidence_report,
             evidence_registry: [...currentEv, patchEvItem],
             agent_trace: [...currentTrace, patchTraceStep]
           };

@@ -119,10 +119,10 @@ Produce the following sections in the report:
 
 ### A. Executive summary
 Explain:
-- The problem being investigated.
-- The most important finding or current hypothesis.
+- The problem being investigated (`problem`).
+- The most important finding or current hypothesis (`primary_finding`).
 - The strength and limitations of the available evidence.
-- The recommended next step.
+- The recommended next step (`recommended_next_step`): Provide 1-3 concise, numbered or bulleted actionable steps for developers (e.g. "1. Step one...\n2. Step two..."). NEVER output an unformatted wall of raw code observations or dump inline tags into this field.
 If the root cause has not been established, explicitly say so.
 
 ### B. Investigation context
